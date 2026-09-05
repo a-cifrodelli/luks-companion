@@ -29,6 +29,7 @@ HA_WAIT_TIMEOUT="${HA_WAIT_TIMEOUT:-15}"
 USB_DETECT_TIMEOUT="${USB_DETECT_TIMEOUT:-40}"
 MAX_PASSPHRASE_TRIES="${MAX_PASSPHRASE_TRIES:-3}"
 SPINDOWN_WAIT_SEC="${SPINDOWN_WAIT_SEC:-3}"
+CUTOFF_GRACE_SEC="${CUTOFF_GRACE_SEC:-5}"
 RELOAD_SAMBA="${RELOAD_SAMBA:-false}"
 TARGET_DEV="${TARGET_DEV:-}"
 
@@ -130,6 +131,9 @@ safe_power_off_sequence() {
             sleep "$SPINDOWN_WAIT_SEC"
         fi
     fi
+
+    echo "  -> Pausa di tolleranza pre-cutoff (${CUTOFF_GRACE_SEC}s)..."
+    sleep "$CUTOFF_GRACE_SEC"
 
     echo "  -> Invio comando spegnimento 220V a Home Assistant..."
     ha_call_service "turn_off"
