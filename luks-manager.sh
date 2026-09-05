@@ -26,9 +26,10 @@ fi
 # Set defaults for optional settings
 HA_INSECURE_TLS="${HA_INSECURE_TLS:-true}"
 HA_WAIT_TIMEOUT="${HA_WAIT_TIMEOUT:-15}"
-USB_DETECT_TIMEOUT="${USB_DETECT_TIMEOUT:-20}"
+USB_DETECT_TIMEOUT="${USB_DETECT_TIMEOUT:-40}"
+MAX_PASSPHRASE_TRIES="${MAX_PASSPHRASE_TRIES:-3}"
 SPINDOWN_WAIT_SEC="${SPINDOWN_WAIT_SEC:-3}"
-RELOAD_SAMBA="${RELOAD_SAMBA:-true}"
+RELOAD_SAMBA="${RELOAD_SAMBA:-false}"
 TARGET_DEV="${TARGET_DEV:-}"
 
 # Construct full LVM paths
@@ -41,7 +42,7 @@ if [ "$HA_INSECURE_TLS" = "true" ]; then
 fi
 
 # -------------------------------------------------------------------
-# HELPER FUNCTIONS FOR HOME ASSISTANT REST API
+# HELPER FUNCTIONS
 # -------------------------------------------------------------------
 ha_call_service() {
     local action="$1" # turn_on or turn_off
@@ -67,7 +68,6 @@ detect_target_device() {
         return
     fi
 
-    # Try resolving via LVM physical volume lookup
     local pv_dev
     pv_dev=$(sudo pvs --noheadings -o pv_name -g "$VG_NAME" 2>/dev/null | tr -d ' ' | head -n1 || echo "")
     if [ -n "$pv_dev" ] && [ -b "$pv_dev" ]; then
@@ -81,13 +81,58 @@ detect_target_device() {
         return
     fi
 
-    # Fallback default check
     if [ -b "/dev/sdb" ]; then
         echo "/dev/sdb"
         return
     fi
 
     echo ""
+}
+
+safe_power_off_sequence() {
+    echo "  -> Flush buffer RAM (sync)..."
+    sudo sync
+
+    echo "  -> Termine processi attivi sui mountpoint..."
+    sudo fuser -km "$MOUNT_CRYPTO" "$MOUNT_BACKUP" 2>/dev/null || true
+
+    echo "  -> Smontaggio filesystem..."
+    sudo umount "$MOUNT_CRYPTO" 2>/dev/null || sudo umount -l "$MOUNT_CRYPTO" 2>/dev/null || true
+    sudo umount "$MOUNT_BACKUP" 2>/dev/null || sudo umount -l "$MOUNT_BACKUP" 2>/dev/null || true
+
+    echo "  -> Chiusura container LUKS (chiave cancellata da RAM)..."
+    sudo cryptsetup close "$MAPPER_NAME" 2>/dev/null || true
+
+    echo "  -> Disattivazione Volume Group LVM..."
+    sudo vgchange -an "$VG_NAME" 2>/dev/null || true
+
+    local final_dev
+    final_dev=$(detect_target_device)
+    if [ -n "$final_dev" ] && [ -b "$final_dev" ]; then
+        local dev_name
+        dev_name=$(basename "$final_dev")
+        echo "  -> Invio comando SCSI STOP UNIT ed espulsione bus per $final_dev..."
+        sudo udisksctl power-off -b "$final_dev" 2>/dev/null || true
+
+        echo "  -> Verifica attiva disconnessione hardware nel kernel Linux..."
+        local off_confirmed=false
+        for i in {1..10}; do
+            if [ ! -b "$final_dev" ] && [ ! -d "/sys/block/${dev_name}" ]; then
+                off_confirmed=true
+                echo "  [✓] Disconnessione confermata dal kernel! Il disco è inerte."
+                break
+            fi
+            sleep 1
+        done
+
+        if [ "$off_confirmed" = false ]; then
+            echo "  [!] Attesa di sicurezza aggiuntiva prima del cutoff 220V..."
+            sleep "$SPINDOWN_WAIT_SEC"
+        fi
+    fi
+
+    echo "  -> Invio comando spegnimento 220V a Home Assistant..."
+    ha_call_service "turn_off"
 }
 
 # ===================================================================
@@ -106,7 +151,7 @@ for i in $(seq 1 "$HA_WAIT_TIMEOUT"); do
     sleep 1
 done
 
-echo "[2/7] Attesa rilevamento disco dal kernel Linux (udev)..."
+echo "[2/7] Attesa rilevamento disco dal kernel Linux (udev, max ${USB_DETECT_TIMEOUT}s)..."
 DEV_FOUND=false
 for i in $(seq 1 "$USB_DETECT_TIMEOUT"); do
     FOUND_DEV=$(detect_target_device)
@@ -126,24 +171,37 @@ if [ "$DEV_FOUND" = false ]; then
 fi
 
 # ===================================================================
-# 2. LVM ACTIVATION & LUKS DECRYPTION
+# 2. LVM ACTIVATION & LUKS DECRYPTION WITH RETRY LOOP
 # ===================================================================
 echo "[3/7] Attivazione Volume Group LVM '$VG_NAME'..."
 sudo vgchange -ay "$VG_NAME"
 
-echo -n -e "\n[*] Inserisci la Passphrase LUKS per '$LV_CRYPTO_PATH': "
-read -rs PASSPHRASE
-echo -e "\n[4/7] Sblocco volume cifrato LUKS2 in RAM..."
+UNLOCKED=false
+for try in $(seq 1 "$MAX_PASSPHRASE_TRIES"); do
+    echo -n -e "\n[*] Inserisci la Passphrase LUKS per '$LV_CRYPTO_PATH' (tentativo $try di $MAX_PASSPHRASE_TRIES): "
+    read -rs PASSPHRASE
+    echo -e "\n[4/7] Verifica passphrase e sblocco volume cifrato in RAM..."
 
-if ! echo -n "$PASSPHRASE" | sudo cryptsetup open "$LV_CRYPTO_PATH" "$MAPPER_NAME" --key-file - ; then
-    echo "[!] ERRORE: Passphrase errata o sblocco fallito." >&2
-    unset PASSPHRASE
-    sudo vgchange -an "$VG_NAME" 2>/dev/null || true
-    ha_call_service "turn_off"
+    if echo -n "$PASSPHRASE" | sudo cryptsetup open "$LV_CRYPTO_PATH" "$MAPPER_NAME" --key-file - ; then
+        UNLOCKED=true
+        unset PASSPHRASE
+        echo "[✓] Volume sbloccato con successo in /dev/mapper/$MAPPER_NAME"
+        break
+    else
+        unset PASSPHRASE
+        echo "[!] ERRORE: Passphrase non corretta." >&2
+        if [ "$try" -lt "$MAX_PASSPHRASE_TRIES" ]; then
+            echo "    Riprova..." >&2
+        fi
+    fi
+done
+
+if [ "$UNLOCKED" = false ]; then
+    echo -e "\n[!] ERRORE: Numero massimo di tentativi raggiunto ($MAX_PASSPHRASE_TRIES)." >&2
+    echo "[*] Esecuzione teardown sicuro e spegnimento hardware..." >&2
+    safe_power_off_sequence
     exit 1
 fi
-unset PASSPHRASE
-echo "[✓] Volume sbloccato in /dev/mapper/$MAPPER_NAME"
 
 # ===================================================================
 # 3. MOUNT FILESYSTEMS & REFRESH SERVICES
@@ -166,61 +224,15 @@ echo -e "\n==================================================================="
 df -h "$MOUNT_CRYPTO" "$MOUNT_BACKUP" 2>/dev/null || df -h "$MOUNT_CRYPTO"
 echo "==================================================================="
 echo " DISCO OPERATIVO E ACCESSIBILE DA TUTTI I DISPOSITIVI!"
-echo " Premi [INVIO] quando desideri chiudere, sigillare e spegnere la 220V."
+echo " Premi [INVIO] quando vuoi chiudere, sigillare e spegnere la 220V."
 echo "==================================================================="
 read -p ""
 
 # ===================================================================
-# 4. TEARDOWN, SIGILLO LUKS, PARCHEGGIO SCSI & VERIFICA DISCONNESSIONE
+# 4. TEARDOWN, SIGILLO LUKS, PARCHEGGIO SCSI & CUTOFF 220V
 # ===================================================================
-echo -e "\n[6/7] Procedura di arresto sicura in corso..."
-
-echo "  -> Flush buffer RAM (sync)..."
-sudo sync
-
-echo "  -> Termine processi attivi sui mountpoint..."
-sudo fuser -km "$MOUNT_CRYPTO" "$MOUNT_BACKUP" 2>/dev/null || true
-
-echo "  -> Smontaggio filesystem..."
-sudo umount "$MOUNT_CRYPTO" 2>/dev/null || sudo umount -l "$MOUNT_CRYPTO" 2>/dev/null || true
-sudo umount "$MOUNT_BACKUP" 2>/dev/null || sudo umount -l "$MOUNT_BACKUP" 2>/dev/null || true
-
-echo "  -> Chiusura container LUKS (chiave cancellata da RAM)..."
-sudo cryptsetup close "$MAPPER_NAME" 2>/dev/null || true
-
-echo "  -> Disattivazione Volume Group LVM..."
-sudo vgchange -an "$VG_NAME" 2>/dev/null || true
-
-FINAL_DEV=$(detect_target_device)
-if [ -n "$FINAL_DEV" ] && [ -b "$FINAL_DEV" ]; then
-    DEV_NAME=$(basename "$FINAL_DEV")
-    echo "  -> Invio comando SCSI STOP UNIT ed espulsione bus per $FINAL_DEV..."
-    sudo udisksctl power-off -b "$FINAL_DEV" 2>/dev/null || true
-
-    # VERIFICA ATTIVA DISCONNESSIONE KERNEL (Nessuna scommessa sui tempi)
-    echo "  -> Verifica attiva disconnessione hardware nel kernel Linux..."
-    OFF_CONFIRMED=false
-    for i in {1..10}; do
-        if [ ! -b "$FINAL_DEV" ] && [ ! -d "/sys/block/${DEV_NAME}" ]; then
-            OFF_CONFIRMED=true
-            echo "  [✓] Disconnessione confermata dal kernel! Il disco è totalmente inerte."
-            break
-        fi
-        sleep 1
-    done
-
-    if [ "$OFF_CONFIRMED" = false ]; then
-        echo "  [!] ATTENZIONE: Il kernel non ha confermato il distacco completo entro 10s."
-        echo "      Attesa di sicurezza aggiuntiva prima del cutoff 220V..."
-        sleep "$SPINDOWN_WAIT_SEC"
-    fi
-fi
-
-# ===================================================================
-# 5. SPEGNIMENTO PRESA (0 WATT STANDBY)
-# ===================================================================
-echo "[7/7] Invio comando spegnimento 220V a Home Assistant..."
-ha_call_service "turn_off"
+echo -e "\n[6/7] Esecuzione procedura di arresto sicura..."
+safe_power_off_sequence
 
 echo -e "\n[✓] CICLO COMPLETATO CON SUCCESSO!"
 echo "    - Filesystem smontati."
