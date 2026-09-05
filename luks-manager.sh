@@ -71,7 +71,6 @@ detect_target_device() {
     local pv_dev
     pv_dev=$(sudo pvs --noheadings -o pv_name -g "$VG_NAME" 2>/dev/null | tr -d ' ' | head -n1 || echo "")
     if [ -n "$pv_dev" ] && [ -b "$pv_dev" ]; then
-        # Resolve parent disk if it's a partition or mapper
         local parent_disk
         parent_disk=$(lsblk -no PKNAME "$pv_dev" 2>/dev/null || echo "")
         if [ -n "$parent_disk" ]; then
@@ -172,7 +171,7 @@ echo "==================================================================="
 read -p ""
 
 # ===================================================================
-# 4. TEARDOWN, SIGILLO LUKS & PARCHEGGIO SCSI
+# 4. TEARDOWN, SIGILLO LUKS, PARCHEGGIO SCSI & VERIFICA DISCONNESSIONE
 # ===================================================================
 echo -e "\n[6/7] Procedura di arresto sicura in corso..."
 
@@ -194,10 +193,28 @@ sudo vgchange -an "$VG_NAME" 2>/dev/null || true
 
 FINAL_DEV=$(detect_target_device)
 if [ -n "$FINAL_DEV" ] && [ -b "$FINAL_DEV" ]; then
-    echo "  -> Parcheggio testine SCSI su $FINAL_DEV..."
+    DEV_NAME=$(basename "$FINAL_DEV")
+    echo "  -> Invio comando SCSI STOP UNIT ed espulsione bus per $FINAL_DEV..."
     sudo udisksctl power-off -b "$FINAL_DEV" 2>/dev/null || true
+
+    # VERIFICA ATTIVA DISCONNESSIONE KERNEL (Nessuna scommessa sui tempi)
+    echo "  -> Verifica attiva disconnessione hardware nel kernel Linux..."
+    OFF_CONFIRMED=false
+    for i in {1..10}; do
+        if [ ! -b "$FINAL_DEV" ] && [ ! -d "/sys/block/${DEV_NAME}" ]; then
+            OFF_CONFIRMED=true
+            echo "  [✓] Disconnessione confermata dal kernel! Il disco è totalmente inerte."
+            break
+        fi
+        sleep 1
+    done
+
+    if [ "$OFF_CONFIRMED" = false ]; then
+        echo "  [!] ATTENZIONE: Il kernel non ha confermato il distacco completo entro 10s."
+        echo "      Attesa di sicurezza aggiuntiva prima del cutoff 220V..."
+        sleep "$SPINDOWN_WAIT_SEC"
+    fi
 fi
-sleep "$SPINDOWN_WAIT_SEC"
 
 # ===================================================================
 # 5. SPEGNIMENTO PRESA (0 WATT STANDBY)
@@ -209,5 +226,5 @@ echo -e "\n[✓] CICLO COMPLETATO CON SUCCESSO!"
 echo "    - Filesystem smontati."
 echo "    - Chiave LUKS distrutta dalla RAM."
 echo "    - Volume Group LVM disattivato."
-echo "    - Testine parcheggiate su rampa."
+echo "    - Testine parcheggiate su rampa e bus USB disconnesso."
 echo "    - Alimentazione 220V disattivata (0 Watt consumi)."

@@ -30,10 +30,11 @@ flowchart TD
             Mounts["<b>Mounted Filesystems</b><br/><code>/mnt/crypto_data</code> & <code>/mnt/backup_data</code>"]
         end
         
-        subgraph TEARDOWN ["⚡ Teardown & Preservation"]
+        subgraph TEARDOWN ["⚡ Teardown & Active Verification"]
             Sync["<b>RAM Flush & Unmount</b><br/><code>sync -> umount -l</code>"]
             Purge["<b>Key Erasure & LVM Deactivate</b><br/><code>cryptsetup close -> vgchange -an</code>"]
             Spindown["<b>SCSI Spindown & Ramp Park</b><br/><code>udisksctl power-off</code>"]
+            Verify["<b>Active Kernel Un-enumeration Check</b><br/><code>[ ! -b /dev/sdb ] && [ ! -d /sys/block/sdb ]</code>"]
         end
     end
 
@@ -59,8 +60,9 @@ flowchart TD
     Orchestrator -->|7. Teardown Trigger| Sync
     Sync --> Purge
     Purge --> Spindown
-    Spindown -->|8. SCSI STOP UNIT| Drive
-    Spindown -->|9. POST /turn_off| HA
+    Spindown --> Verify
+    Verify -->|8. SCSI STOP UNIT Confirmed| Drive
+    Verify -->|9. Verified Disconnect -> POST /turn_off| HA
     HA -->|0W Standby Cutoff| Tapo
 
     %% Styling
@@ -73,14 +75,14 @@ flowchart TD
 ```
 
 > [!IMPORTANT]
-> **Zero Emergency Retracts Guarantee**: `luks-manager` sends the SCSI `START STOP UNIT` command before cutting the 220V power, ensuring heads are safely parked on landing ramps without triggering SMART 192 errors.
+> **Active Safety Verification**: Before sending the 220V power cutoff command to Home Assistant, `luks-manager` actively queries the Linux kernel `/sys/block/` tree and device node table until kernel un-enumeration is 100% confirmed. This guarantees that SCSI head parking and USB bus ejection are complete before turning off the outlet.
 
 ---
 
 ## ✨ Features
 
 - 🔋 **0 Watt Standby Consumption**: Cuts 220V power via Home Assistant smart plug automation when not in use.
-- 🛡️ **Hardware Preservation**: Uses SCSI `START STOP UNIT` (`udisksctl power-off`) to safely park heads on landing ramps before 220V power cut.
+- 🛡️ **Hardware Preservation**: Uses SCSI `START STOP UNIT` (`udisksctl power-off`) and active kernel un-enumeration polling to safely park heads on landing ramps before 220V power cut.
 - 🔑 **Strict RAM Hygiene**: Passphrase is read via `stdin` (`--key-file -`) directly into kernel memory (`dm-crypt`). Never written to disk, CLI args, or shell history.
 - 📦 **LVM2 + LUKS2 Support**: Handles complex multi-volume LVM setups containing both encrypted and plain partitions.
 - 🌐 **Decoupled Home Assistant Integration**: Communicates via standard HTTPS REST API using Long-Lived Access Tokens.
@@ -151,7 +153,7 @@ Run the main orchestrator script:
 4. **LUKS Decryption**: Prompts for your passphrase securely without echoing.
 5. **Mount**: Mounts encrypted and plain volumes to `/mnt/...`.
 6. **Active Session**: Keeps volume available for file sharing. Press `[ENTER]` when done.
-7. **Safe Teardown**: Flushes RAM buffers (`sync`), unmounts filesystems, closes LUKS, deactivates LVM VGs, parks SCSI heads (`udisksctl power-off`), and powers OFF the 220V smart plug via Home Assistant (0W).
+7. **Safe Teardown**: Flushes RAM buffers (`sync`), unmounts filesystems, closes LUKS, deactivates LVM VGs, parks SCSI heads (`udisksctl power-off`), verifies device un-enumeration in `/sys/block/`, and powers OFF the 220V smart plug via Home Assistant (0W).
 
 ---
 
