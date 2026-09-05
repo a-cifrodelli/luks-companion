@@ -17,7 +17,7 @@ It combines **Home Assistant REST API smart plug control**, **LVM Volume Group a
 
 ```mermaid
 flowchart TD
-    subgraph CLIENTS ["📱 / 💻 Client Tier (iOS, Android, Mac, PC)"]
+    subgraph CLIENTS ["💻 Client Tier (Linux, Mac, PC)"]
         UserTrigger["User Trigger<br/><i>(On-Demand CLI / Web API)</i>"]
     end
 
