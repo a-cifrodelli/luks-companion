@@ -1,0 +1,18 @@
+# Environment and credential files
+.env
+*.env
+*.key
+*.pem
+*.token
+config.env
+
+# Temp and log files
+*.log
+scratch/
+tmp/
+
+# OS and Editor specific files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
