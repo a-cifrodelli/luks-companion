@@ -15,34 +15,65 @@ It combines **Home Assistant REST API smart plug control**, **LVM Volume Group a
 
 ## 📐 Architecture Overview
 
+```mermaid
+flowchart TD
+    subgraph CLIENTS ["📱 / 💻 Client Tier (iOS, Android, Mac, PC)"]
+        UserTrigger["User Trigger<br/><i>(On-Demand CLI / Web API)</i>"]
+    end
+
+    subgraph RPI ["🌐 Raspberry Pi 5 Host (Arch Linux ARM)"]
+        Orchestrator["<b>LUKS Manager Orchestrator</b><br/><code>luks-manager.sh</code>"]
+        
+        subgraph SEC ["🔒 Security & RAM Layer"]
+            LVM["<b>LVM2 Kernel Module</b><br/><code>vgchange -ay</code>"]
+            LUKS["<b>LUKS2 / dm-crypt</b><br/><i>Argon2id Decryption via Stdin</i>"]
+            Mounts["<b>Mounted Filesystems</b><br/><code>/mnt/crypto_data</code> & <code>/mnt/backup_data</code>"]
+        end
+        
+        subgraph TEARDOWN ["⚡ Teardown & Preservation"]
+            Sync["<b>RAM Flush & Unmount</b><br/><code>sync -> umount -l</code>"]
+            Purge["<b>Key Erasure & LVM Deactivate</b><br/><code>cryptsetup close -> vgchange -an</code>"]
+            Spindown["<b>SCSI Spindown & Ramp Park</b><br/><code>udisksctl power-off</code>"]
+        end
+    end
+
+    subgraph EXTERNAL ["🔌 Hardware & Home Assistant Infrastructure"]
+        HA["<b>Home Assistant REST API</b><br/><code>https://homeassistant.local:8123</code>"]
+        Tapo["<b>Smart Plug (Tapo P105)</b><br/><i>220V Relays</i>"]
+        Drive[("<b>WD My Book 3.5 Drive</b><br/><i>SCSI / SES Bridge</i>")]
+    end
+
+    %% Flow Relationships
+    UserTrigger --> Orchestrator
+    Orchestrator -->|1. POST /turn_on| HA
+    HA -->|Power ON| Tapo
+    Tapo -.->|220V Feed| Drive
+    Drive -.->|2. USB Kernel Enumeration| Orchestrator
+    
+    Orchestrator -->|3. Activate VG| LVM
+    LVM -->|4. Decrypt via stdin| LUKS
+    LUKS -->|5. Mount| Mounts
+    
+    Mounts -->|6. User Session Active| Orchestrator
+    
+    Orchestrator -->|7. Teardown Trigger| Sync
+    Sync --> Purge
+    Purge --> Spindown
+    Spindown -->|8. SCSI STOP UNIT| Drive
+    Spindown -->|9. POST /turn_off| HA
+    HA -->|0W Standby Cutoff| Tapo
+
+    %% Styling
+    classDef default font-family:sans-serif;
+    style RPI fill:#1a1c23,stroke:#3b82f6,stroke-width:2px,color:#fff
+    style EXTERNAL fill:#131b26,stroke:#10b981,stroke-width:2px,color:#fff
+    style SEC fill:#1e293b,stroke:#f59e0b,stroke-width:1px,color:#fff
+    style TEARDOWN fill:#1e293b,stroke:#ef4444,stroke-width:1px,color:#fff
+    style CLIENTS fill:#0f172a,stroke:#6366f1,stroke-width:2px,color:#fff
 ```
-[ Your Devices (iOS / Android / Mac / PC) ]
-                     │
-                     │ On-Demand CLI / API Trigger
-                     ▼
-  ┌─────────────────────────────────────────────────────────┐
-  │ Raspberry Pi 5 / Arch Linux ARM (24/7 Headless Host)   │
-  │                                                         │
-  │  1. HA REST API -> Turn ON Smart Plug (Tapo P105)       │
-  │  2. Kernel udev -> Wait for USB device (/dev/sdb)      │
-  │  3. LVM2 -> vgchange -ay <VG_NAME>                      │
-  │  4. LUKS2 -> cryptsetup open via stdin (RAM-only)       │
-  │  5. Mount -> /mnt/crypto_data & /mnt/backup_data        │
-  │  6. Refresh File Shares (Samba / FileBrowser)           │
-  │                                                         │
-  │  ... ACTIVE SESSION ...                                 │
-  │                                                         │
-  │  7. Teardown -> sync -> umount -> cryptsetup close      │
-  │  8. LVM2 -> vgchange -an <VG_NAME>                      │
-  │  9. SCSI -> udisksctl power-off (Head Parking)          │
-  │ 10. HA REST API -> Turn OFF Smart Plug (0W Standby)     │
-  └──────────────────────────┬──────────────────────────────┘
-                             │
-                             ▼
-  ┌─────────────────────────────────────────────────────────┐
-  │ External 3.5" WD My Book (SCSI / SES Bridge)            │
-  └─────────────────────────────────────────────────────────┘
-```
+
+> [!IMPORTANT]
+> **Zero Emergency Retracts Guarantee**: `luks-manager` sends the SCSI `START STOP UNIT` command before cutting the 220V power, ensuring heads are safely parked on landing ramps without triggering SMART 192 errors.
 
 ---
 
@@ -126,11 +157,13 @@ Run the main orchestrator script:
 
 ## 🔒 Security Best Practices
 
+> [!TIP]
+> Always restrict permissions on your `.env` file to prevent local user reading:
+> ```bash
+> chmod 600 .env
+> ```
+
 - Never commit your `.env` file! It is ignored by `.gitignore`.
-- Set restrictive file permissions on `.env`:
-  ```bash
-  chmod 600 .env
-  ```
 - Use a Home Assistant **Long-Lived Access Token** restricted to the required entity scope if possible.
 
 ---
