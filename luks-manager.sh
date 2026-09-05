@@ -11,7 +11,6 @@ ENV_FILE="${SCRIPT_DIR}/.env"
 # 0. LOAD ENVIRONMENT CONFIGURATION
 # -------------------------------------------------------------------
 if [ -f "$ENV_FILE" ]; then
-    # Load configuration variables
     set -o allexport
     # shellcheck disable=SC1090
     source "$ENV_FILE"
@@ -32,10 +31,16 @@ SPINDOWN_WAIT_SEC="${SPINDOWN_WAIT_SEC:-3}"
 CUTOFF_GRACE_SEC="${CUTOFF_GRACE_SEC:-5}"
 RELOAD_SAMBA="${RELOAD_SAMBA:-false}"
 TARGET_DEV="${TARGET_DEV:-}"
+LV_BACKUP="${LV_BACKUP:-}"
+MOUNT_BACKUP="${MOUNT_BACKUP:-}"
 
 # Construct full LVM paths
 LV_CRYPTO_PATH="/dev/${VG_NAME}/${LV_CRYPTO}"
-LV_BACKUP_PATH="/dev/${VG_NAME}/${LV_BACKUP}"
+
+LV_BACKUP_PATH=""
+if [ -n "$LV_BACKUP" ]; then
+    LV_BACKUP_PATH="/dev/${VG_NAME}/${LV_BACKUP}"
+fi
 
 CURL_FLAGS="-s -f"
 if [ "$HA_INSECURE_TLS" = "true" ]; then
@@ -95,11 +100,17 @@ safe_power_off_sequence() {
     sudo sync
 
     echo "  -> Termine processi attivi sui mountpoint..."
-    sudo fuser -km "$MOUNT_CRYPTO" "$MOUNT_BACKUP" 2>/dev/null || true
+    if [ -n "$MOUNT_BACKUP" ]; then
+        sudo fuser -km "$MOUNT_CRYPTO" "$MOUNT_BACKUP" 2>/dev/null || true
+    else
+        sudo fuser -km "$MOUNT_CRYPTO" 2>/dev/null || true
+    fi
 
     echo "  -> Smontaggio filesystem..."
     sudo umount "$MOUNT_CRYPTO" 2>/dev/null || sudo umount -l "$MOUNT_CRYPTO" 2>/dev/null || true
-    sudo umount "$MOUNT_BACKUP" 2>/dev/null || sudo umount -l "$MOUNT_BACKUP" 2>/dev/null || true
+    if [ -n "$MOUNT_BACKUP" ]; then
+        sudo umount "$MOUNT_BACKUP" 2>/dev/null || sudo umount -l "$MOUNT_BACKUP" 2>/dev/null || true
+    fi
 
     echo "  -> Chiusura container LUKS (chiave cancellata da RAM)..."
     sudo cryptsetup close "$MAPPER_NAME" 2>/dev/null || true
@@ -211,13 +222,15 @@ fi
 # 3. MOUNT FILESYSTEMS & REFRESH SERVICES
 # ===================================================================
 echo "[5/7] Montaggio volumi su filesystem..."
-sudo mkdir -p "$MOUNT_CRYPTO" "$MOUNT_BACKUP"
-
+sudo mkdir -p "$MOUNT_CRYPTO"
 sudo mount -o noatime,nodev,nosuid "/dev/mapper/$MAPPER_NAME" "$MOUNT_CRYPTO"
 echo "[✓] Dati Cifrati montati su: $MOUNT_CRYPTO"
 
-if sudo mount -o noatime,nodev,nosuid "$LV_BACKUP_PATH" "$MOUNT_BACKUP" 2>/dev/null; then
-    echo "[✓] Dati Backup montati su: $MOUNT_BACKUP"
+if [ -n "$LV_BACKUP_PATH" ] && [ -n "$MOUNT_BACKUP" ]; then
+    sudo mkdir -p "$MOUNT_BACKUP"
+    if sudo mount -o noatime,nodev,nosuid "$LV_BACKUP_PATH" "$MOUNT_BACKUP" 2>/dev/null; then
+        echo "[✓] Dati Secondo Volume montati su: $MOUNT_BACKUP"
+    fi
 fi
 
 if [ "$RELOAD_SAMBA" = "true" ]; then
@@ -225,7 +238,11 @@ if [ "$RELOAD_SAMBA" = "true" ]; then
 fi
 
 echo -e "\n==================================================================="
-df -h "$MOUNT_CRYPTO" "$MOUNT_BACKUP" 2>/dev/null || df -h "$MOUNT_CRYPTO"
+if [ -n "$MOUNT_BACKUP" ]; then
+    df -h "$MOUNT_CRYPTO" "$MOUNT_BACKUP" 2>/dev/null || df -h "$MOUNT_CRYPTO"
+else
+    df -h "$MOUNT_CRYPTO"
+fi
 echo "==================================================================="
 echo " DISCO OPERATIVO E ACCESSIBILE DA TUTTI I DISPOSITIVI!"
 echo " Premi [INVIO] quando vuoi chiudere, sigillare e spegnere la 220V."
