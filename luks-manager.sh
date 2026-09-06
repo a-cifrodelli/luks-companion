@@ -13,13 +13,31 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 # -------------------------------------------------------------------
-# 0B. EXCLUSIVE EXECUTION LOCKING (FLOCK)
+# 0B. BUFFER STDIN IMMEDIATELY (INTO RAM TMPFS) TO PREVENT CORRUPTION
+# -------------------------------------------------------------------
+STDIN_KEY_FILE=""
+if [ ! -t 0 ]; then
+    STDIN_KEY_FILE=$(mktemp /dev/shm/luks_key.XXXXXX 2>/dev/null || mktemp /tmp/luks_key.XXXXXX)
+    chmod 600 "$STDIN_KEY_FILE"
+    cat > "$STDIN_KEY_FILE"
+fi
+
+cleanup_key() {
+    if [ -n "$STDIN_KEY_FILE" ] && [ -f "$STDIN_KEY_FILE" ]; then
+        shred -u "$STDIN_KEY_FILE" 2>/dev/null || rm -f "$STDIN_KEY_FILE"
+        STDIN_KEY_FILE=""
+    fi
+}
+
+# -------------------------------------------------------------------
+# 0C. EXCLUSIVE EXECUTION LOCKING (FLOCK)
 # -------------------------------------------------------------------
 LOCK_FILE="/run/luks-manager.lock"
 exec 200>"$LOCK_FILE"
 if ! flock -n 200; then
     echo "[!] ERRORE: Un'altra istanza di luks-manager è già in esecuzione!" >&2
     echo "    Attendere la chiusura della sessione attiva prima di avviarne un'altra." >&2
+    cleanup_key
     exit 1
 fi
 
@@ -38,6 +56,7 @@ else
     echo "[!] ERRORE: File di configurazione .env non trovato!" >&2
     echo "    Copia il file di esempio ed inserisci i tuoi parametri:" >&2
     echo "    cp ${SCRIPT_DIR}/.env.example ${SCRIPT_DIR}/.env" >&2
+    cleanup_key
     exit 1
 fi
 
@@ -95,6 +114,7 @@ while [[ $# -gt 0 ]]; do
                 shift 2
             else
                 echo "[!] ERRORE: Opzione --keyfile richiede un percorso." >&2
+                cleanup_key
                 exit 1
             fi
             ;;
@@ -104,11 +124,13 @@ while [[ $# -gt 0 ]]; do
             ;;
         -h|--help)
             echo "Uso: $0 [start|stop|status] [--keyfile <percorso_chiave>] [--no-watchdog]"
+            cleanup_key
             exit 0
             ;;
         *)
             echo "[!] Argomento sconosciuto: $1" >&2
             echo "Uso: $0 [start|stop|status] [--keyfile <percorso_chiave>] [--no-watchdog]" >&2
+            cleanup_key
             exit 1
             ;;
     esac
@@ -131,7 +153,7 @@ ha_call_service() {
       -H "Authorization: Bearer ${HA_TOKEN}" \
       -H "Content-Type: application/json" \
       -d "{\"entity_id\": \"${HA_ENTITY_ID}\"}" \
-      "${HA_URL}/api/services/switch/${action}" > /dev/null 2>&1; then
+      "${HA_URL}/api/services/switch/${action}" < /dev/null > /dev/null 2>&1; then
         echo "[!] WARNING: Impossibile contattare Home Assistant (azione: ${action}). Check rete/token." >&2
         return 1
     fi
@@ -144,7 +166,7 @@ ha_get_state() {
     res=$(curl ${CURL_FLAGS} \
       -H "Authorization: Bearer ${HA_TOKEN}" \
       -H "Content-Type: application/json" \
-      "${HA_URL}/api/states/${HA_ENTITY_ID}" 2>/dev/null | grep -o '"state":"[^"]*"' | cut -d'"' -f4 || echo "unknown")
+      "${HA_URL}/api/states/${HA_ENTITY_ID}" < /dev/null 2>/dev/null | grep -o '"state":"[^"]*"' | cut -d'"' -f4 || echo "unknown")
     echo "${res:-unknown}"
 }
 
@@ -230,6 +252,7 @@ get_disk_io_stats() {
 safe_power_off_sequence() {
     # Ignore signals during teardown to guarantee atomic execution
     trap '' SIGINT SIGTERM SIGHUP
+    cleanup_key
 
     if [ "$TEARDOWN_DONE" = true ]; then
         return 0
@@ -358,7 +381,7 @@ if [ "$COMMAND" = "status" ]; then
     ha_st=$(ha_get_state)
     echo "  - Alimentazione Presa HA: ${ha_st}"
     
-    if lvs "$VG_NAME" >/dev/null 2>&1; then
+    if [ -d "/dev/${VG_NAME}" ] || lvs "$VG_NAME" >/dev/null 2>&1; then
         echo "  - Volume Group LVM ($VG_NAME): ATTIVO"
     else
         echo "  - Volume Group LVM ($VG_NAME): NON ATTIVO"
@@ -389,6 +412,7 @@ if [ "$COMMAND" = "status" ]; then
     else
         echo "  - Servizio WebDAV: NON ATTIVO"
     fi
+    cleanup_key
     exit 0
 fi
 
@@ -443,10 +467,10 @@ done
 echo "[2/7] Attesa rilevamento disco dal kernel Linux (udev, max ${USB_DETECT_TIMEOUT}s)..."
 DEV_FOUND=false
 for i in $(seq 1 "$USB_DETECT_TIMEOUT"); do
-    pvscan >/dev/null 2>&1 || true
-    vgscan --mknodes >/dev/null 2>&1 || true
+    pvscan < /dev/null >/dev/null 2>&1 || true
+    vgscan --mknodes < /dev/null >/dev/null 2>&1 || true
     FOUND_DEV=$(detect_target_device)
-    if [ -n "$FOUND_DEV" ] || lvs "$VG_NAME" >/dev/null 2>&1; then
+    if [ -n "$FOUND_DEV" ] || lvs "$VG_NAME" < /dev/null >/dev/null 2>&1; then
         DEV_FOUND=true
         echo "[✓] Disco rilevato sul bus USB!"
         break
@@ -464,8 +488,8 @@ fi
 # 3. LVM ACTIVATION
 # ===================================================================
 echo "[3/7] Attivazione Volume Group LVM '$VG_NAME'..."
-vgscan --mknodes >/dev/null 2>&1 || true
-vgchange -ay "$VG_NAME" >/dev/null 2>&1 || vgchange -ay "$VG_NAME"
+vgscan --mknodes < /dev/null >/dev/null 2>&1 || true
+vgchange -ay "$VG_NAME" < /dev/null >/dev/null 2>&1 || vgchange -ay "$VG_NAME" < /dev/null
 
 # ===================================================================
 # 4. LUKS DECRYPTION IN-MEMORY (RAM / STDIN / KEYFILE)
@@ -476,6 +500,7 @@ echo "[4/7] Sblocco volume cifrato LUKS2 in RAM..."
 if [ -b "/dev/mapper/${MAPPER_NAME}" ]; then
     echo "[*] Container LUKS già aperto in /dev/mapper/$MAPPER_NAME."
     VOLUME_IS_UNLOCKED=true
+    cleanup_key
 else
     VOLUME_IS_UNLOCKED=false
 
@@ -496,7 +521,20 @@ else
             exit 1
         fi
 
-    # Scenario B: Interactive TTY Passphrase prompt
+    # Scenario B: Stdin Key File (buffered safely from daemon / client)
+    elif [ -n "$STDIN_KEY_FILE" ] && [ -s "$STDIN_KEY_FILE" ]; then
+        if cryptsetup open "$LV_CRYPTO_PATH" "$MAPPER_NAME" --key-file "$STDIN_KEY_FILE" >/dev/null 2>&1; then
+            VOLUME_IS_UNLOCKED=true
+            cleanup_key
+            echo "[✓] Volume sbloccato con successo da stdin in /dev/mapper/$MAPPER_NAME"
+        else
+            cleanup_key
+            echo "[!] ERRORE: Chiave/Passphrase da stdin non valida o errata." >&2
+            safe_power_off_sequence
+            exit 1
+        fi
+
+    # Scenario C: Interactive TTY Passphrase prompt
     elif [ -t 0 ]; then
         for try in $(seq 1 "$MAX_PASSPHRASE_TRIES"); do
             echo -n -e "\n[*] Inserisci la Passphrase LUKS per '$LV_CRYPTO_PATH' (tentativo $try di $MAX_PASSPHRASE_TRIES): "
@@ -518,17 +556,10 @@ else
                 echo "[!] ERRORE: Passphrase LUKS errata." >&2
             fi
         done
-
-    # Scenario C: Non-interactive piped input (passphrase or raw binary key stream directly to cryptsetup)
     else
-        if cryptsetup open "$LV_CRYPTO_PATH" "$MAPPER_NAME" --key-file - >/dev/null 2>&1; then
-            VOLUME_IS_UNLOCKED=true
-            echo "[✓] Volume sbloccato con successo da stdin in /dev/mapper/$MAPPER_NAME"
-        else
-            echo "[!] ERRORE: Chiave/Passphrase da stdin non valida o errata." >&2
-            safe_power_off_sequence
-            exit 1
-        fi
+        echo "[!] ERRORE: Nessun input chiave o passphrase ricevuto da stdin." >&2
+        safe_power_off_sequence
+        exit 1
     fi
 fi
 

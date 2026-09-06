@@ -52,8 +52,8 @@ async function updateStatus() {
             }
 
             // Cards
-            document.getElementById("valLvm").textContent = data.vg_name ? `Attivo (${data.vg_name})` : (data.unlocked ? "Attivo" : "Disattivato");
-            document.getElementById("valLuks").textContent = data.unlocked ? `Sbloccato (/dev/mapper/${data.mapper_name || '...'})` : "Sigillato (0 byte in RAM)";
+            document.getElementById("valLvm").textContent = data.vg_active ? `Attivo (${data.vg_name})` : "Disattivato";
+            document.getElementById("valLuks").textContent = data.unlocked ? `Sbloccato (/dev/mapper/${data.mapper_name || '...' })` : "Sigillato (0 byte in RAM)";
             document.getElementById("valMount").textContent = data.mounted ? (data.mount_crypto || "Montato") : "Non montato";
             document.getElementById("valWebdav").textContent = data.webdav_active ? "Attivo (Porta 9443)" : "Inattivo";
 

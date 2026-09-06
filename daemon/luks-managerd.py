@@ -31,6 +31,14 @@ def get_status():
     mapper_name = env.get("MAPPER_NAME", "")
     mount_crypto = env.get("MOUNT_CRYPTO", "")
     vg_name = env.get("VG_NAME", "")
+    lv_crypto = env.get("LV_CRYPTO", "")
+
+    # A Volume Group is active if its /dev/<VG_NAME> exists or if /dev/mapper/<VG>-<LV> exists
+    vg_active = False
+    if vg_name:
+        vg_dev = f"/dev/{vg_name}"
+        mapper_lv = f"/dev/mapper/{vg_name}-{lv_crypto}" if lv_crypto else ""
+        vg_active = (os.path.exists(vg_dev) and os.path.isdir(vg_dev)) or (mapper_lv and os.path.exists(mapper_lv))
 
     is_unlocked = os.path.exists(f"/dev/mapper/{mapper_name}") if mapper_name else False
     is_mounted = os.path.ismount(mount_crypto) if mount_crypto else False
@@ -40,6 +48,7 @@ def get_status():
         "status": "mounted" if is_mounted else ("unlocked" if is_unlocked else "stopped"),
         "unlocked": is_unlocked,
         "mounted": is_mounted,
+        "vg_active": vg_active,
         "webdav_active": webdav_active,
         "vg_name": vg_name,
         "mapper_name": mapper_name,
@@ -55,7 +64,7 @@ def send_response(conn, payload):
 
 def handle_client(conn):
     try:
-        data = conn.recv(16384)
+        data = conn.recv(65536)
         if not data:
             return
         
@@ -73,7 +82,7 @@ def handle_client(conn):
         elif action == "unlock":
             key_payload = None
             
-            # 1. Base64 encoded binary keyfile
+            # 1. Base64 encoded binary keyfile (from keyfile tab or stego image)
             if req.get("keyfile_base64"):
                 try:
                     key_payload = base64.b64decode(req["keyfile_base64"])
@@ -81,9 +90,9 @@ def handle_client(conn):
                     send_response(conn, {"status": "error", "message": f"Decodifica keyfile base64 fallita: {e}"})
                     return
 
-            # 2. Plain passphrase string
+            # 2. Plain passphrase string (from passphrase tab) - NO trailing newline!
             elif req.get("passphrase"):
-                key_payload = req["passphrase"].encode('utf-8') + b"\n"
+                key_payload = req["passphrase"].encode('utf-8')
 
             if not key_payload:
                 send_response(conn, {"status": "error", "message": "Nessuna passphrase o keyfile fornito"})
@@ -97,7 +106,7 @@ def handle_client(conn):
             )
             stdout_bytes, stderr_bytes = proc.communicate(input=key_payload)
             
-            # Overwrite key in RAM immediately
+            # Wipe key payload from RAM
             del key_payload
 
             stdout = stdout_bytes.decode('utf-8', errors='replace').strip()
