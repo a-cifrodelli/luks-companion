@@ -376,9 +376,13 @@ if [ -b "/dev/mapper/${MAPPER_NAME}" ]; then
 else
     VOLUME_IS_UNLOCKED=false
     for try in $(seq 1 "$MAX_PASSPHRASE_TRIES"); do
-        echo -n -e "\n[*] Inserisci la Passphrase LUKS per '$LV_CRYPTO_PATH' (tentativo $try di $MAX_PASSPHRASE_TRIES): "
-        read -rs PASSPHRASE
-        echo ""
+        if [ -t 0 ]; then
+            echo -n -e "\n[*] Inserisci la Passphrase LUKS per '$LV_CRYPTO_PATH' (tentativo $try di $MAX_PASSPHRASE_TRIES): "
+            read -rs PASSPHRASE
+            echo ""
+        else
+            PASSPHRASE=$(systemd-ask-password --timeout=60 "Inserisci la Passphrase LUKS per $LV_CRYPTO_PATH (tentativo $try di $MAX_PASSPHRASE_TRIES):" 2>/dev/null || echo "")
+        fi
 
         if [ -z "$PASSPHRASE" ]; then
             echo "[!] Passphrase vuota non valida. Riprova..." >&2
@@ -478,9 +482,13 @@ if [ "$IDLE_TIMEOUT_MIN" -gt 0 ]; then
     max_idle_seconds=$((IDLE_TIMEOUT_MIN * 60))
 
     while true; do
-        if read -r -t "$check_interval" -p "" 2>/dev/null; then
-            echo "[*] Chiusura manuale richiesta dall'utente (INVIO)..."
-            break
+        if [ -t 0 ]; then
+            if read -r -t "$check_interval" -p "" 2>/dev/null; then
+                echo "[*] Chiusura manuale richiesta dall'utente (INVIO)..."
+                break
+            fi
+        else
+            sleep "$check_interval"
         fi
 
         current_stats=$(get_disk_io_stats "$target_disk")
@@ -498,7 +506,9 @@ if [ "$IDLE_TIMEOUT_MIN" -gt 0 ]; then
         fi
     done
 else
-    read -r -p "" || true
+    if [ -t 0 ]; then
+        read -r -p "" || true
+    fi
 fi
 
 # Reset trap for normal clean exit
