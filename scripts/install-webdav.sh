@@ -4,8 +4,31 @@
 # ===================================================================
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ENV_FILE="${SCRIPT_DIR}/.env"
+TEMPLATE_FILE="${SCRIPT_DIR}/config/webdav.yaml.template"
+
 if [ "$EUID" -ne 0 ]; then
     echo "[!] ERRORE: Questo script deve essere eseguito come root (sudo ./scripts/install-webdav.sh)" >&2
+    exit 1
+fi
+
+# Load .env to get MOUNT_CRYPTO path
+if [ -f "$ENV_FILE" ]; then
+    set -o allexport
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +o allexport
+else
+    echo "[!] AVVISO: File .env non trovato in ${ENV_FILE}."
+    echo "    Impostazione di fallback per MOUNT_CRYPTO=/mnt/encrypted_vault"
+    MOUNT_CRYPTO="/mnt/encrypted_vault"
+fi
+
+MOUNT_CRYPTO="${MOUNT_CRYPTO:-/mnt/encrypted_vault}"
+
+if [ ! -f "$TEMPLATE_FILE" ]; then
+    echo "[!] ERRORE: Template di configurazione non trovato in ${TEMPLATE_FILE}" >&2
     exit 1
 fi
 
@@ -32,41 +55,25 @@ read -rs -p "Inserisci password per utente '$WEBDAV_USER': " WEBDAV_PASS
 echo ""
 
 # Generate Bcrypt hash using python
-BCRYPT_HASH=$(python3 -c "
+WEBDAV_PASSWORD_HASH=$(python3 -c "
 import sys
 try:
     import bcrypt
     print(bcrypt.hashpw(sys.argv[1].encode(), bcrypt.gensalt()).decode())
 except ImportError:
-    import base64, hashlib
-    # Fallback bcrypt format simulation or warning
     import subprocess
     print(subprocess.check_output(['python3', '-c', 'import hashlib; print(hashlib.sha256(sys.argv[1].encode()).hexdigest())'], text=True).strip())
 " "$WEBDAV_PASS" 2>/dev/null || echo "$WEBDAV_PASS")
 
-# 3. CREATE CONFIG FILE
-echo "[3/4] Creazione file di configurazione /etc/webdav/config.yaml..."
+# 3. POPULATE CONFIG FILE FROM TEMPLATE
+echo "[3/4] Generazione /etc/webdav/config.yaml dal template (Scope: ${MOUNT_CRYPTO})..."
 mkdir -p /etc/webdav
 
-cat <<EOF > /etc/webdav/config.yaml
-# ===================================================================
-# WEBDAV SERVER CONFIGURATION FOR LUKS MANAGER
-# ===================================================================
-address: 0.0.0.0
-port: 8443
-cert: ""
-key: ""
-auth: true
-
-users:
-  - username: "${WEBDAV_USER}"
-    password: "${BCRYPT_HASH}"
-    scope: "/mnt/crypto_data"
-    modify: true
-EOF
+export WEBDAV_USER WEBDAV_PASSWORD_HASH MOUNT_CRYPTO
+envsubst '$WEBDAV_USER $WEBDAV_PASSWORD_HASH $MOUNT_CRYPTO' < "$TEMPLATE_FILE" > /etc/webdav/config.yaml
 
 chmod 600 /etc/webdav/config.yaml
-echo "[✓] Configurazione salvata in /etc/webdav/config.yaml"
+echo "[✓] Configurazione creata ed applicata in /etc/webdav/config.yaml"
 
 # 4. CREATE SYSTEMD SERVICE
 echo "[4/4] Creazione servizio systemd /etc/systemd/system/webdav.service..."
@@ -86,8 +93,8 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-echo "[✓] Servizio systemd creato e registrato!"
+echo "[✓] Servizio systemd registrato con successo!"
 
 echo -e "\n=== INSTALLAZIONE COMPLETATA CON SUCCESSO! ==="
-echo "Il server WebDAV è pronto. Verrà avviato automaticamente da luks-manager.sh"
-echo "quando il disco cifrato verrà montato."
+echo "Il server WebDAV è pronto con ambito '${MOUNT_CRYPTO}'."
+echo "Verrà avviato automaticamente da luks-manager.sh quando il disco viene montato."

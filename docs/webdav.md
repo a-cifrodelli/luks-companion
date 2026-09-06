@@ -42,16 +42,12 @@ webdav -h
 
 ---
 
-## ⚙️ Configuration File (`/etc/webdav/config.yaml`)
+## ⚙️ Configuration Template (`config/webdav.yaml.template`)
 
-Create the directory and configuration file:
+The repository includes a clean configuration template in `config/webdav.yaml.template`.
 
-```bash
-sudo mkdir -p /etc/webdav
-sudo nano /etc/webdav/config.yaml
-```
+When running `./scripts/install-webdav.sh`, the installer automatically reads `MOUNT_CRYPTO` from your `.env` file and populates `/etc/webdav/config.yaml`:
 
-### Sample Configuration Template:
 ```yaml
 # ===================================================================
 # WEBDAV SERVER CONFIGURATION FOR LUKS MANAGER
