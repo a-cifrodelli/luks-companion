@@ -29,6 +29,7 @@ def get_status():
     env = load_env()
     mapper_name = env.get("MAPPER_NAME", "")
     mount_crypto = env.get("MOUNT_CRYPTO", "")
+    vg_name = env.get("VG_NAME", "")
 
     is_unlocked = os.path.exists(f"/dev/mapper/{mapper_name}") if mapper_name else False
     is_mounted = os.path.ismount(mount_crypto) if mount_crypto else False
@@ -39,6 +40,8 @@ def get_status():
         "unlocked": is_unlocked,
         "mounted": is_mounted,
         "webdav_active": webdav_active,
+        "vg_name": vg_name,
+        "mapper_name": mapper_name,
         "mount_crypto": mount_crypto
     }
 
@@ -48,7 +51,12 @@ def handle_client(conn):
         if not data:
             return
         
-        req = json.loads(data.decode('utf-8'))
+        try:
+            req = json.loads(data.decode('utf-8'))
+        except json.JSONDecodeError:
+            conn.sendall(json.dumps({"status": "error", "message": "Richiesta JSON non valida"}).encode('utf-8'))
+            return
+
         action = req.get("action", "")
 
         if action == "status":
@@ -57,11 +65,11 @@ def handle_client(conn):
         elif action == "unlock":
             passphrase = req.get("passphrase", "")
             if not passphrase:
-                conn.sendall(json.dumps({"status": "error", "message": "Passphrase vuota"}).encode('utf-8'))
+                conn.sendall(json.dumps({"status": "error", "message": "Passphrase vuota o mancante"}).encode('utf-8'))
                 return
 
             proc = subprocess.Popen(
-                ["/usr/bin/env", "bash", MANAGER_SCRIPT],
+                ["/usr/bin/env", "bash", MANAGER_SCRIPT, "unlock", "--no-watchdog"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -70,21 +78,42 @@ def handle_client(conn):
             stdout, stderr = proc.communicate(input=passphrase + "\n")
             
             if proc.returncode == 0:
-                conn.sendall(json.dumps({"status": "ok", "message": "Volume sbloccato e montato con successo", "data": get_status()}).encode('utf-8'))
+                conn.sendall(json.dumps({
+                    "status": "ok",
+                    "message": "Volume sbloccato e montato con successo",
+                    "output": stdout.strip(),
+                    "data": get_status()
+                }).encode('utf-8'))
             else:
-                conn.sendall(json.dumps({"status": "error", "message": stderr or stdout or "Errore durante lo sblocco"}).encode('utf-8'))
+                conn.sendall(json.dumps({
+                    "status": "error",
+                    "message": stderr.strip() or stdout.strip() or "Errore durante lo sblocco",
+                    "data": get_status()
+                }).encode('utf-8'))
 
         elif action == "stop":
             proc = subprocess.Popen(
-                ["/usr/bin/env", "bash", MANAGER_SCRIPT],
+                ["/usr/bin/env", "bash", MANAGER_SCRIPT, "stop"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True
             )
-            # Send newline to trigger manual exit
-            stdout, stderr = proc.communicate(input="\n")
-            conn.sendall(json.dumps({"status": "ok", "message": "Procedura di teardown completata", "data": get_status()}).encode('utf-8'))
+            stdout, stderr = proc.communicate()
+            
+            if proc.returncode == 0:
+                conn.sendall(json.dumps({
+                    "status": "ok",
+                    "message": "Procedura di teardown e spegnimento completata",
+                    "output": stdout.strip(),
+                    "data": get_status()
+                }).encode('utf-8'))
+            else:
+                conn.sendall(json.dumps({
+                    "status": "error",
+                    "message": stderr.strip() or stdout.strip() or "Errore durante l'arresto",
+                    "data": get_status()
+                }).encode('utf-8'))
 
         else:
             conn.sendall(json.dumps({"status": "error", "message": f"Azione '{action}' sconosciuta"}).encode('utf-8'))

@@ -1,6 +1,6 @@
 # ===================================================================
 # LUKS-MANAGER SOCKET DAEMON SYSTEMD SERVICE TEMPLATE
-# Placeholders (${SCRIPT_DIR}) are dynamically populated by scripts/install-daemon.sh
+# Placeholders (${REPO_DIR}) are dynamically populated by daemon/install.sh
 # ===================================================================
 [Unit]
 Description=LUKS Manager UNIX Domain Socket Daemon for WebApp Integration
@@ -8,8 +8,8 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=${SCRIPT_DIR}
-ExecStart=/usr/bin/python3 ${SCRIPT_DIR}/scripts/luks-managerd.py
+WorkingDirectory=${REPO_DIR}
+ExecStart=/usr/bin/python3 ${REPO_DIR}/daemon/luks-managerd.py
 Restart=always
 RestartSec=3
 

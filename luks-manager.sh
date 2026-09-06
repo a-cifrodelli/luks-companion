@@ -70,6 +70,40 @@ if [ "$HA_INSECURE_TLS" = "true" ]; then
     CURL_FLAGS="-k ${CURL_FLAGS}"
 fi
 
+# Parse positional arguments and flags
+COMMAND="start"
+NO_WATCHDOG=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        start|unlock)
+            COMMAND="start"
+            shift
+            ;;
+        stop|lock)
+            COMMAND="stop"
+            shift
+            ;;
+        status)
+            COMMAND="status"
+            shift
+            ;;
+        --no-watchdog|--daemon)
+            NO_WATCHDOG=true
+            shift
+            ;;
+        -h|--help)
+            echo "Uso: $0 [start|stop|status] [--no-watchdog]"
+            exit 0
+            ;;
+        *)
+            echo "[!] Argomento sconosciuto: $1" >&2
+            echo "Uso: $0 [start|stop|status] [--no-watchdog]" >&2
+            exit 1
+            ;;
+    esac
+done
+
 # Global state flags for cleanup trap
 POWER_IS_ON=false
 VOLUME_IS_UNLOCKED=false
@@ -228,7 +262,7 @@ safe_power_off_sequence() {
             }
         fi
 
-        if [ -n "$MOUNT_BACKUP" ] && mountpoint -q "$MOUNT_BACKUP"; then
+        if [ -n "$MOUNT_BACKUP" ] && mountpoint -q "$MOUNT_BACKUP" 2>/dev/null; then
             umount "$MOUNT_BACKUP" 2>/dev/null || {
                 sleep 1
                 fuser -km -9 "$MOUNT_BACKUP" 2>/dev/null || true
@@ -307,8 +341,67 @@ safe_power_off_sequence() {
 }
 
 # -------------------------------------------------------------------
-# REGISTER TRAP FOR SIGINT (Ctrl+C), SIGTERM, SIGHUP
+# ACTION: STATUS
 # -------------------------------------------------------------------
+if [ "$COMMAND" = "status" ]; then
+    echo "=== LUKS MANAGER: STATO ATTUALE ==="
+    ha_st=$(ha_get_state)
+    echo "  - Alimentazione Presa HA: ${ha_st}"
+    
+    if lvs "$VG_NAME" >/dev/null 2>&1; then
+        echo "  - Volume Group LVM ($VG_NAME): ATTIVO"
+    else
+        echo "  - Volume Group LVM ($VG_NAME): NON ATTIVO"
+    fi
+
+    if [ -b "/dev/mapper/${MAPPER_NAME}" ]; then
+        echo "  - LUKS Mapper (/dev/mapper/${MAPPER_NAME}): SBLOCCATO"
+    else
+        echo "  - LUKS Mapper (/dev/mapper/${MAPPER_NAME}): BLOCCATO"
+    fi
+
+    if mountpoint -q "$MOUNT_CRYPTO" 2>/dev/null; then
+        echo "  - Mount Principale ($MOUNT_CRYPTO): MONTATO"
+    else
+        echo "  - Mount Principale ($MOUNT_CRYPTO): NON MONTATO"
+    fi
+
+    if [ -n "$MOUNT_BACKUP" ]; then
+        if mountpoint -q "$MOUNT_BACKUP" 2>/dev/null; then
+            echo "  - Mount Secondario ($MOUNT_BACKUP): MONTATO"
+        else
+            echo "  - Mount Secondario ($MOUNT_BACKUP): NON MONTATO"
+        fi
+    fi
+
+    if systemctl is-active --quiet webdav 2>/dev/null; then
+        echo "  - Servizio WebDAV: ATTIVO"
+    else
+        echo "  - Servizio WebDAV: NON ATTIVO"
+    fi
+    exit 0
+fi
+
+# -------------------------------------------------------------------
+# ACTION: STOP / LOCK
+# -------------------------------------------------------------------
+if [ "$COMMAND" = "stop" ]; then
+    echo "=== LUKS MANAGER: ARRESTO E SMONTAGGIO RICHIESTO ==="
+    safe_power_off_sequence
+    echo -e "\n[✓] ARRESTO COMPLETATO CON SUCCESSO!"
+    echo "    - Filesystem smontati."
+    echo "    - Chiave LUKS distrutta dalla RAM."
+    echo "    - Volume Group LVM disattivato."
+    echo "    - Testine parcheggiate su rampa e bus USB disconnesso."
+    echo "    - Alimentazione 220V disattivata (0 Watt consumi)."
+    exit 0
+fi
+
+# -------------------------------------------------------------------
+# ACTION: START / UNLOCK
+# -------------------------------------------------------------------
+
+# Register trap for clean shutdown on interrupt
 trap_cleanup() {
     echo -e "\n\n[!] Interruzione rilevata (Ctrl+C / Segnale di uscita)!" >&2
     safe_power_off_sequence
@@ -365,7 +458,7 @@ vgscan --mknodes >/dev/null 2>&1 || true
 vgchange -ay "$VG_NAME" >/dev/null 2>&1 || vgchange -ay "$VG_NAME"
 
 # ===================================================================
-# 4. LUKS DECRYPTION IN-MEMORY (PROMPT PASSPHRASE HERE WITH RETRIES)
+# 4. LUKS DECRYPTION IN-MEMORY (RAM)
 # ===================================================================
 echo "[4/7] Sblocco volume cifrato LUKS2 in RAM..."
 
@@ -375,34 +468,52 @@ if [ -b "/dev/mapper/${MAPPER_NAME}" ]; then
     VOLUME_IS_UNLOCKED=true
 else
     VOLUME_IS_UNLOCKED=false
-    for try in $(seq 1 "$MAX_PASSPHRASE_TRIES"); do
-        if [ -t 0 ]; then
+    if [ -t 0 ]; then
+        # Interactive TTY mode
+        for try in $(seq 1 "$MAX_PASSPHRASE_TRIES"); do
             echo -n -e "\n[*] Inserisci la Passphrase LUKS per '$LV_CRYPTO_PATH' (tentativo $try di $MAX_PASSPHRASE_TRIES): "
             read -rs PASSPHRASE
             echo ""
-        else
-            PASSPHRASE=$(systemd-ask-password --timeout=60 "Inserisci la Passphrase LUKS per $LV_CRYPTO_PATH (tentativo $try di $MAX_PASSPHRASE_TRIES):" 2>/dev/null || echo "")
-        fi
 
+            if [ -z "$PASSPHRASE" ]; then
+                echo "[!] Passphrase vuota non valida. Riprova..." >&2
+                continue
+            fi
+
+            if printf '%s' "$PASSPHRASE" | cryptsetup open "$LV_CRYPTO_PATH" "$MAPPER_NAME" --key-file - >/dev/null 2>&1; then
+                VOLUME_IS_UNLOCKED=true
+                PASSPHRASE=""
+                echo "[✓] Volume sbloccato con successo in /dev/mapper/$MAPPER_NAME"
+                break
+            else
+                PASSPHRASE=""
+                echo "[!] ERRORE: Passphrase LUKS errata." >&2
+            fi
+        done
+    else
+        # Non-interactive mode (e.g. piped from socket daemon)
+        read -r PASSPHRASE || true
         if [ -z "$PASSPHRASE" ]; then
-            echo "[!] Passphrase vuota non valida. Riprova..." >&2
-            continue
+            echo "[!] ERRORE: Nessuna passphrase ricevuta da stdin." >&2
+            safe_power_off_sequence
+            exit 1
         fi
 
         if printf '%s' "$PASSPHRASE" | cryptsetup open "$LV_CRYPTO_PATH" "$MAPPER_NAME" --key-file - >/dev/null 2>&1; then
             VOLUME_IS_UNLOCKED=true
-            PASSPHRASE="" # Clear passphrase immediately
+            PASSPHRASE=""
             echo "[✓] Volume sbloccato con successo in /dev/mapper/$MAPPER_NAME"
-            break
         else
             PASSPHRASE=""
             echo "[!] ERRORE: Passphrase LUKS errata." >&2
+            safe_power_off_sequence
+            exit 1
         fi
-    done
+    fi
 fi
 
 if [ "$VOLUME_IS_UNLOCKED" = false ]; then
-    echo -e "\n[!] ERRORE: Numero massimo di tentativi passphrase raggiunto ($MAX_PASSPHRASE_TRIES)." >&2
+    echo -e "\n[!] ERRORE: Impossibile sbloccare il container LUKS." >&2
     echo "    Esecuzione spegnimento di sicurezza della presa e pulizia..." >&2
     safe_power_off_sequence
     exit 1
@@ -466,6 +577,17 @@ else
     df -h "$MOUNT_CRYPTO"
 fi
 echo "==================================================================="
+
+# In non-interactive mode or --no-watchdog / daemon mode, exit cleanly now!
+if [ "$NO_WATCHDOG" = true ] || [ ! -t 0 ]; then
+    echo " DISCO OPERATIVO E MONTATO CON SUCCESSO!"
+    echo " (Esecuzione non-interattiva/demone: sessione attiva lasciata montata)."
+    echo "==================================================================="
+    # Disarm trap so we don't power off on exit
+    trap - SIGINT SIGTERM SIGHUP
+    exit 0
+fi
+
 echo " DISCO OPERATIVO E ACCESSIBILE DA TUTTI I DISPOSITIVI!"
 if [ "$IDLE_TIMEOUT_MIN" -gt 0 ]; then
     echo " Watchdog di inattività attivo: Spegnimento automatico dopo ${IDLE_TIMEOUT_MIN} min di inattività I/O."

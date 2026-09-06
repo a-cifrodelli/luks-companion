@@ -9,7 +9,7 @@
 
 An on-demand, zero-standby-power LUKS2 & LVM storage subsystem orchestrator designed for 24/7 headless Linux servers (such as Raspberry Pi 5).
 
-It combines **Home Assistant REST API smart plug control**, **LVM Volume Group activation**, **RAM-only LUKS2 passphrase decryption (`stdin`)**, and **clean SCSI spindown (`udisksctl power-off`)** to achieve true **0 Watt cold storage standby** with safe physical head parking.
+It combines **Home Assistant REST API smart plug control**, **LVM Volume Group activation**, **RAM-only LUKS2 passphrase decryption (`stdin`)**, **lightweight WebDAV sharing**, and **clean SCSI spindown (`udisksctl power-off`)** to achieve true **0 Watt cold storage standby** with safe physical head parking.
 
 ---
 
@@ -17,17 +17,23 @@ It combines **Home Assistant REST API smart plug control**, **LVM Volume Group a
 
 ```mermaid
 flowchart TD
-    subgraph CLIENTS ["💻 Client Tier (Linux, Mac, PC)"]
-        UserTrigger["User Trigger<br/><i>(On-Demand CLI / Web API)</i>"]
+    subgraph CLIENTS ["💻 Client Tier (Web App, CLI, WebDAV)"]
+        CLI["Interactive CLI<br/><code>./luks-manager.sh</code>"]
+        WebApp["Web App / API Client<br/><i>JSON over UNIX Socket</i>"]
     end
 
-    subgraph RPI ["🌐 Raspberry Pi 5 Host (Arch Linux ARM)"]
-        Orchestrator["<b>LUKS Manager Orchestrator</b><br/><code>luks-manager.sh</code>"]
+    subgraph DAEMON ["⚙️ Daemon Subsystem (daemon/)"]
+        SockDaemon["<b>luks-managerd</b><br/><code>/run/luks-manager.sock</code>"]
+    end
+
+    subgraph RPI ["🌐 Host System (Arch Linux ARM / Raspberry Pi 5)"]
+        Orchestrator["<b>LUKS Manager Core</b><br/><code>luks-manager.sh [start|stop|status]</code>"]
         
         subgraph SEC ["🔒 Security & RAM Layer"]
             LVM["<b>LVM2 Kernel Module</b><br/><code>vgchange -ay</code>"]
             LUKS["<b>LUKS2 / dm-crypt</b><br/><i>Argon2id Decryption via Stdin</i>"]
             Mounts["<b>Mounted Filesystems</b><br/><code>/mnt/crypto_data</code> & <code>/mnt/backup_data</code>"]
+            WebDAV["<b>WebDAV Server</b><br/><code>/srv/webdav</code> <i>(Isolated Bind-Mount)</i>"]
         end
         
         subgraph TEARDOWN ["⚡ Teardown & Active Verification"]
@@ -45,7 +51,10 @@ flowchart TD
     end
 
     %% Flow Relationships
-    UserTrigger --> Orchestrator
+    CLI --> Orchestrator
+    WebApp --> SockDaemon
+    SockDaemon --> Orchestrator
+
     Orchestrator -->|1. POST /turn_on| HA
     HA -->|Power ON| Tapo
     Tapo -.->|220V Feed| Drive
@@ -54,24 +63,15 @@ flowchart TD
     Orchestrator -->|3. Activate VG| LVM
     LVM -->|4. Decrypt via stdin| LUKS
     LUKS -->|5. Mount| Mounts
+    Mounts -->|6. Bind-Mount & Start| WebDAV
     
-    Mounts -->|6. User Session Active| Orchestrator
-    
-    Orchestrator -->|7. Teardown Trigger| Sync
+    Orchestrator -->|7. Teardown Trigger (stop)| Sync
     Sync --> Purge
     Purge --> Spindown
     Spindown --> Verify
     Verify -->|8. SCSI STOP UNIT Confirmed| Drive
     Verify -->|9. Verified Disconnect -> POST /turn_off| HA
     HA -->|0W Standby Cutoff| Tapo
-
-    %% Styling
-    classDef default font-family:sans-serif;
-    style RPI fill:#1a1c23,stroke:#3b82f6,stroke-width:2px,color:#fff
-    style EXTERNAL fill:#131b26,stroke:#10b981,stroke-width:2px,color:#fff
-    style SEC fill:#1e293b,stroke:#f59e0b,stroke-width:1px,color:#fff
-    style TEARDOWN fill:#1e293b,stroke:#ef4444,stroke-width:1px,color:#fff
-    style CLIENTS fill:#0f172a,stroke:#6366f1,stroke-width:2px,color:#fff
 ```
 
 > [!IMPORTANT]
@@ -85,8 +85,9 @@ flowchart TD
 - 🛡️ **Hardware Preservation**: Uses SCSI `START STOP UNIT` (`udisksctl power-off`) and active kernel un-enumeration polling to safely park heads on landing ramps before 220V power cut.
 - 🔑 **Strict RAM Hygiene**: Passphrase is read via `stdin` (`--key-file -`) directly into kernel memory (`dm-crypt`). Never written to disk, CLI args, or shell history.
 - 📦 **LVM2 + LUKS2 Support**: Handles complex multi-volume LVM setups containing both encrypted and plain partitions.
-- 🌐 **Decoupled Home Assistant Integration**: Communicates via standard HTTPS REST API using Long-Lived Access Tokens.
-- ⚙️ **Fully Configurable**: All credentials, paths, entity IDs, and timeouts are stripped into `.env`.
+- 🌐 **Dedicated Socket Daemon (`daemon/`)**: Provides a non-root UNIX domain socket (`/run/luks-manager.sock`) for seamless Web App integration.
+- 📁 **Lightweight WebDAV Subsystem**: Native image/video thumbnail support with isolated bind-mount directory scoping (`/srv/webdav`).
+- ⚙️ **Fully Atomic Subcommands**: Standalone `start` (with watchdog), `stop` (immediate safe teardown), and `status`.
 
 ---
 
@@ -96,12 +97,12 @@ Ensure your Linux host has the required utilities installed:
 
 ### On Arch Linux ARM
 ```bash
-sudo pacman -S --needed cryptsetup lvm2 udisks2 psmisc curl
+sudo pacman -S --needed cryptsetup lvm2 udisks2 psmisc curl socat python
 ```
 
 ### On Debian / Raspberry Pi OS
 ```bash
-sudo apt update && sudo apt install -y cryptsetup lvm2 udisks2 psmisc curl
+sudo apt update && sudo apt install -y cryptsetup lvm2 udisks2 psmisc curl socat python3
 ```
 
 ---
@@ -110,8 +111,8 @@ sudo apt update && sudo apt install -y cryptsetup lvm2 udisks2 psmisc curl
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-username/luks-manager.git
-   cd luks-manager
+   git clone https://github.com/your-username/luks-companion.git
+   cd luks-companion
    ```
 
 2. **Configure your environment**:
@@ -119,54 +120,65 @@ sudo apt update && sudo apt install -y cryptsetup lvm2 udisks2 psmisc curl
    ```bash
    cp .env.example .env
    nano .env
+   chmod 600 .env
    ```
 
 3. **Make scripts executable**:
    ```bash
-   chmod +x luks-manager.sh test_ha_tapo.sh
+   chmod +x luks-manager.sh test_ha_tapo.sh daemon/install.sh scripts/install-webdav.sh
    ```
 
 ---
 
-## 🧪 Unit Testing Home Assistant Integration
+## 💻 CLI Usage
 
-Before mounting drives, verify your Home Assistant connection and smart plug entity ID:
+The core script `luks-manager.sh` supports atomic subcommands:
 
-```bash
-./test_ha_tapo.sh
-```
-
----
-
-## 💻 Usage
-
-Run the main orchestrator script:
-
+### 1. Avvio Interattivo (Start / Unlock)
+Powers on the plug, activates LVM, decrypts LUKS via interactive passphrase prompt, mounts filesystems, starts WebDAV, and enters the idle watchdog loop:
 ```bash
 ./luks-manager.sh
+# oppure: ./luks-manager.sh start
+```
+*Press `[ENTER]` at any time to initiate safe teardown and power cutoff.*
+
+### 2. Arresto Immediato (Stop / Lock)
+Safely stops WebDAV, unmounts filesystems, seals LUKS, deactivates LVM, parks drive heads, and cuts 220V power:
+```bash
+./luks-manager.sh stop
 ```
 
-### Workflow Execution Steps:
-1. **Power-ON**: Calls HA REST API to power on the smart plug.
-2. **Device Detection**: Waits for Linux kernel udev to detect the USB storage device.
-3. **LVM Activation**: Runs `vgchange -ay <VG_NAME>`.
-4. **LUKS Decryption**: Prompts for your passphrase securely without echoing.
-5. **Mount**: Mounts encrypted and plain volumes to `/mnt/...`.
-6. **Active Session**: Keeps volume available for file sharing. Press `[ENTER]` when done.
-7. **Safe Teardown**: Flushes RAM buffers (`sync`), unmounts filesystems, closes LUKS, deactivates LVM VGs, parks SCSI heads (`udisksctl power-off`), verifies device un-enumeration in `/sys/block/`, and powers OFF the 220V smart plug via Home Assistant (0W).
+### 3. Verifica Stato (Status)
+Inspects live power, LVM, LUKS, mount, and WebDAV state:
+```bash
+./luks-manager.sh status
+```
 
 ---
 
-## 🔒 Security Best Practices
+## 🌐 Socket Daemon (`daemon/`)
 
-> [!TIP]
-> Always restrict permissions on your `.env` file to prevent local user reading:
-> ```bash
-> chmod 600 .env
-> ```
+To allow unprivileged local Web Apps to query status, unlock, or lock storage without needing `sudo` or SSH, install the background socket daemon:
 
-- Never commit your `.env` file! It is ignored by `.gitignore`.
-- Use a Home Assistant **Long-Lived Access Token** restricted to the required entity scope if possible.
+```bash
+sudo ./daemon/install.sh
+```
+
+### Testing the Socket API
+The socket listens at `/run/luks-manager.sock` (`chmod 0666`):
+
+- **Query Status**:
+  ```bash
+  echo '{"action": "status"}' | socat - UNIX-CONNECT:/run/luks-manager.sock
+  ```
+- **Unlock Volume**:
+  ```bash
+  echo '{"action": "unlock", "passphrase": "your_passphrase"}' | socat - UNIX-CONNECT:/run/luks-manager.sock
+  ```
+- **Stop / Safe Teardown**:
+  ```bash
+  echo '{"action": "stop"}' | socat - UNIX-CONNECT:/run/luks-manager.sock
+  ```
 
 ---
 
