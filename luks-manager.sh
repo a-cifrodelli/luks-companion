@@ -43,7 +43,7 @@ TARGET_DEV="${TARGET_DEV:-}"
 LV_BACKUP="${LV_BACKUP:-}"
 MOUNT_BACKUP="${MOUNT_BACKUP:-}"
 
-WEBDAV_SHARE_DIR="/run/luks_webdav_shares"
+WEBDAV_SHARE_DIR="/srv/webdav"
 
 # Construct full LVM paths
 LV_CRYPTO_PATH="/dev/${VG_NAME}/${LV_CRYPTO}"
@@ -170,7 +170,12 @@ safe_power_off_sequence() {
     if [ "$ENABLE_WEBDAV" = "true" ]; then
         echo "  -> Stop del servizio WebDAV..."
         systemctl stop webdav 2>/dev/null || true
-        rm -rf "$WEBDAV_SHARE_DIR" 2>/dev/null || true
+
+        echo "  -> Smontaggio bind-mount WebDAV..."
+        if [ -d "$WEBDAV_SHARE_DIR" ]; then
+            umount -l "$WEBDAV_SHARE_DIR"/* 2>/dev/null || true
+            rm -rf "${WEBDAV_SHARE_DIR:?}"/* 2>/dev/null || true
+        fi
     fi
 
     echo "  -> Flush buffer RAM (sync)..."
@@ -392,18 +397,21 @@ if [ -n "$LV_BACKUP_PATH" ] && [ -n "$MOUNT_BACKUP" ]; then
 fi
 
 if [ "$ENABLE_WEBDAV" = "true" ]; then
-    echo "[*] Configurazione ambito WebDAV in RAM (${WEBDAV_SHARE_DIR})..."
+    echo "[*] Configurazione ambito WebDAV isolato in ${WEBDAV_SHARE_DIR}..."
     mkdir -p "$WEBDAV_SHARE_DIR"
-    rm -rf "${WEBDAV_SHARE_DIR:?}"/*
+    umount -l "$WEBDAV_SHARE_DIR"/* 2>/dev/null || true
+    rm -rf "${WEBDAV_SHARE_DIR:?}"/* 2>/dev/null || true
 
-    # Symlink primary mount point
+    # Bind mount primary mount point
     crypto_folder_name=$(basename "$MOUNT_CRYPTO")
-    ln -snf "$MOUNT_CRYPTO" "${WEBDAV_SHARE_DIR}/${crypto_folder_name}"
+    mkdir -p "${WEBDAV_SHARE_DIR}/${crypto_folder_name}"
+    mount --bind "$MOUNT_CRYPTO" "${WEBDAV_SHARE_DIR}/${crypto_folder_name}"
 
-    # Symlink secondary mount point if configured and mounted
+    # Bind mount secondary mount point if configured and mounted
     if [ -n "$MOUNT_BACKUP" ] && mountpoint -q "$MOUNT_BACKUP"; then
         backup_folder_name=$(basename "$MOUNT_BACKUP")
-        ln -snf "$MOUNT_BACKUP" "${WEBDAV_SHARE_DIR}/${backup_folder_name}"
+        mkdir -p "${WEBDAV_SHARE_DIR}/${backup_folder_name}"
+        mount --bind "$MOUNT_BACKUP" "${WEBDAV_SHARE_DIR}/${backup_folder_name}"
     fi
 
     if [ -f "/etc/webdav/config.yaml" ]; then

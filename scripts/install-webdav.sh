@@ -33,8 +33,8 @@ fi
 
 WEBDAV_PORT="${WEBDAV_PORT:-9443}"
 
-# Dedicated volatile RAM scope exposing strictly the configured volume mounts
-WEBDAV_SCOPE="/run/luks_webdav_shares"
+# Persistent WebDAV scope directory (never falls back to root /)
+WEBDAV_SCOPE="/srv/webdav"
 
 if [ ! -f "$YAML_TEMPLATE_FILE" ]; then
     echo "[!] ERRORE: Template YAML non trovato in ${YAML_TEMPLATE_FILE}" >&2
