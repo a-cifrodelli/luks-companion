@@ -74,7 +74,7 @@ TARGET_DEV="${TARGET_DEV:-}"
 LV_BACKUP="${LV_BACKUP:-}"
 MOUNT_BACKUP="${MOUNT_BACKUP:-}"
 
-WEBDAV_SHARE_DIR="/srv/webdav"
+WEBDAV_SHARE_DIR="${WEBDAV_SCOPE:-/srv/webdav}"
 
 # Construct full LVM paths
 LV_CRYPTO_PATH="/dev/${VG_NAME}/${LV_CRYPTO}"

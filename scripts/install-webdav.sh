@@ -33,8 +33,8 @@ fi
 
 WEBDAV_PORT="${WEBDAV_PORT:-9088}"
 
-# Persistent WebDAV scope directory (never falls back to root /)
-WEBDAV_SCOPE="/srv/webdav"
+# Persistent WebDAV scope directory (configurable in .env, default /srv/webdav)
+WEBDAV_SCOPE="${WEBDAV_SCOPE:-/srv/webdav}"
 
 if [ ! -f "$YAML_TEMPLATE_FILE" ]; then
     echo "[!] ERRORE: Template YAML non trovato in ${YAML_TEMPLATE_FILE}" >&2
