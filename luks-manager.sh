@@ -87,11 +87,6 @@ detect_target_device() {
         return
     fi
 
-    if [ -b "/dev/sdb" ]; then
-        echo "/dev/sdb"
-        return
-    fi
-
     echo ""
 }
 
@@ -141,6 +136,8 @@ safe_power_off_sequence() {
             echo "  [!] Attesa di sicurezza aggiuntiva prima del cutoff 220V..."
             sleep "$SPINDOWN_WAIT_SEC"
         fi
+    else
+        echo "  [*] Nessun dispositivo fisico agganciato da disconnettere via SCSI."
     fi
 
     echo "  -> Pausa di tolleranza pre-cutoff (${CUTOFF_GRACE_SEC}s)..."
@@ -153,7 +150,7 @@ safe_power_off_sequence() {
 # ===================================================================
 # 1. HARDWARE POWER-ON (HOME ASSISTANT)
 # ===================================================================
-echo "[1/7] Invio comando di accensione presa a Home Assistant (${HA_ENTITY_ID})..."
+echo "[1/7] Invio comando di accensione presa a Home Assistant (${HA_ENTITY_ID})...."
 ha_call_service "turn_on"
 
 echo "[*] Attesa conferma stato 'on' da Home Assistant..."

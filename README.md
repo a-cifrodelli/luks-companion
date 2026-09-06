@@ -34,7 +34,7 @@ flowchart TD
             Sync["<b>RAM Flush & Unmount</b><br/><code>sync -> umount -l</code>"]
             Purge["<b>Key Erasure & LVM Deactivate</b><br/><code>cryptsetup close -> vgchange -an</code>"]
             Spindown["<b>SCSI Spindown & Ramp Park</b><br/><code>udisksctl power-off</code>"]
-            Verify["<b>Active Kernel Un-enumeration Check</b><br/><code>[ ! -b /dev/sdb ] && [ ! -d /sys/block/sdb ]</code>"]
+            Verify["<b>Active Kernel Un-enumeration Check</b><br/><code>[ ! -b /dev/sdX ] && [ ! -d /sys/block/sdX ]</code>"]
         end
     end
 
