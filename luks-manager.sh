@@ -251,7 +251,10 @@ safe_power_off_sequence() {
         echo "  [*] Nessun disco esterno LVM rilevato da disconnettere via SCSI."
     fi
 
-    if [ "$POWER_IS_ON" = true ]; then
+    # Cutoff 220V Smart Plug if power was turned on OR if HA reports plug is currently ON
+    local ha_current_state
+    ha_current_state=$(ha_get_state)
+    if [ "$POWER_IS_ON" = true ] || [ "$ha_current_state" == "on" ]; then
         echo "  -> Pausa di tolleranza pre-cutoff (${CUTOFF_GRACE_SEC}s)..."
         sleep "$CUTOFF_GRACE_SEC"
 
@@ -279,12 +282,23 @@ trap trap_cleanup SIGINT SIGTERM SIGHUP
 # ===================================================================
 echo "=== LUKS MANAGER: AVVIO SISTEMA STOC CUSTODITO ==="
 
-echo -n -e "\n[*] Inserisci la Passphrase LUKS per '$LV_CRYPTO_PATH' (tentativo 1 di $MAX_PASSPHRASE_TRIES): "
-read -rs PASSPHRASE
-echo ""
+PASSPHRASE_PROVIDED=false
+for try in $(seq 1 "$MAX_PASSPHRASE_TRIES"); do
+    echo -n -e "\n[*] Inserisci la Passphrase LUKS per '$LV_CRYPTO_PATH' (tentativo $try di $MAX_PASSPHRASE_TRIES): "
+    read -rs PASSPHRASE
+    echo ""
 
-if [ -z "$PASSPHRASE" ]; then
-    echo "[!] Passphrase vuota non valida." >&2
+    if [ -n "$PASSPHRASE" ]; then
+        PASSPHRASE_PROVIDED=true
+        break
+    else
+        echo "[!] Passphrase vuota non valida. Riprova..." >&2
+    fi
+done
+
+if [ "$PASSPHRASE_PROVIDED" = false ]; then
+    echo "[!] ERRORE: Nessuna passphrase fornita. Avvio spegnimento di sicurezza..." >&2
+    safe_power_off_sequence
     exit 1
 fi
 
