@@ -86,6 +86,8 @@ class WebAppHandler(BaseHTTPRequestHandler):
         # Serve static assets
         if path == "/" or path == "":
             path = "/index.html"
+        elif path == "/favicon.ico":
+            path = "/favicon.svg"
 
         file_path = os.path.abspath(os.path.join(STATIC_DIR, path.lstrip("/")))
 
