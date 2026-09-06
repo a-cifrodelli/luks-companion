@@ -36,13 +36,16 @@ else
     exit 1
 fi
 
-if [ -z "${MOUNT_CRYPTO:-}" ]; then
-    echo -e "${CLR_RED}[✗] ERRORE: La variabile MOUNT_CRYPTO non è definita nel file .env!${CLR_RESET}" >&2
-    exit 1
+STORAGE_BASE="${STORAGE_BASE:-/srv/storage}"
+MAPPER_NAME="${MAPPER_NAME:-crypto_data}"
+LV_BACKUP="${LV_BACKUP:-}"
+MOUNT_CRYPTO="${STORAGE_BASE}/${MAPPER_NAME}"
+MOUNT_BACKUP=""
+if [ -n "$LV_BACKUP" ]; then
+    MOUNT_BACKUP="${STORAGE_BASE}/${LV_BACKUP}"
 fi
 
 WEBDAV_PORT="${WEBDAV_PORT:-9088}"
-STORAGE_BASE="${STORAGE_BASE:-$(dirname "$MOUNT_CRYPTO")}"
 STORAGE_GROUP="${STORAGE_GROUP:-storage}"
 STORAGE_PERMS="${STORAGE_PERMS:-2775}"
 

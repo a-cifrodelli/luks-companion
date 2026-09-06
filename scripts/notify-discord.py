@@ -45,7 +45,9 @@ def main():
     host_name = socket.gethostname()
     now_iso = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     vg_name = env.get("VG_NAME", "N/D")
-    mount_crypto = env.get("MOUNT_CRYPTO", "N/D")
+    mapper_name = env.get("MAPPER_NAME", "")
+    storage_base = env.get("STORAGE_BASE", "/srv/storage")
+    mount_crypto = env.get("MOUNT_CRYPTO") or (os.path.join(storage_base, mapper_name) if mapper_name else "N/D")
     enable_webdav = env.get("ENABLE_WEBDAV", "true").lower() == "true"
     webdav_port = env.get("WEBDAV_PORT", "9088")
     idle_timeout = env.get("IDLE_TIMEOUT_MIN", "30")

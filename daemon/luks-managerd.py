@@ -177,11 +177,15 @@ def get_smart_data(target_dev):
 def get_status():
     env = load_env()
     mapper_name = env.get("MAPPER_NAME", "")
-    mount_crypto = env.get("MOUNT_CRYPTO", "")
-    mount_backup = env.get("MOUNT_BACKUP", "")
     vg_name = env.get("VG_NAME", "")
     lv_crypto = env.get("LV_CRYPTO", "")
+    lv_backup = env.get("LV_BACKUP", "")
+    storage_base = env.get("STORAGE_BASE", "/srv/storage")
     target_dev_cfg = env.get("TARGET_DEV", "")
+
+    # Mount points calculated dynamically under STORAGE_BASE
+    mount_crypto = os.path.join(storage_base, mapper_name) if mapper_name else ""
+    mount_backup = os.path.join(storage_base, lv_backup) if lv_backup else ""
 
     # A Volume Group is active if its /dev/<VG_NAME> exists or if /dev/mapper/<VG>-<LV> exists
     vg_active = False
