@@ -33,8 +33,8 @@ fi
 
 WEBDAV_PORT="${WEBDAV_PORT:-9443}"
 
-# Set WebDAV scope directly to the configured MOUNT_CRYPTO mountpoint
-WEBDAV_SCOPE="${MOUNT_CRYPTO}"
+# Dedicated volatile RAM scope exposing strictly the configured volume mounts
+WEBDAV_SCOPE="/run/luks_webdav_shares"
 
 if [ ! -f "$YAML_TEMPLATE_FILE" ]; then
     echo "[!] ERRORE: Template YAML non trovato in ${YAML_TEMPLATE_FILE}" >&2
@@ -82,6 +82,7 @@ except ImportError:
 # 3. POPULATE CONFIG FILE FROM TEMPLATE
 echo "[3/4] Generazione /etc/webdav/config.yaml dal template (Scope: ${WEBDAV_SCOPE})..."
 mkdir -p /etc/webdav
+mkdir -p "$WEBDAV_SCOPE"
 
 export WEBDAV_USER WEBDAV_PASSWORD_HASH WEBDAV_SCOPE WEBDAV_PORT
 envsubst '$WEBDAV_USER $WEBDAV_PASSWORD_HASH $WEBDAV_SCOPE $WEBDAV_PORT' < "$YAML_TEMPLATE_FILE" > /etc/webdav/config.yaml
@@ -97,5 +98,5 @@ systemctl daemon-reload
 echo "[✓] Servizio systemd registrato con successo!"
 
 echo -e "\n=== INSTALLAZIONE COMPLETATA CON SUCCESSO! ==="
-echo "Il server WebDAV è pronto sulla porta ${WEBDAV_PORT} esponendo l'ambito '${WEBDAV_SCOPE}'."
+echo "Il server WebDAV è pronto sulla porta ${WEBDAV_PORT} esponendo le sole cartelle montate in '${WEBDAV_SCOPE}'."
 echo "Verrà avviato automaticamente da luks-manager.sh quando il disco viene montato."

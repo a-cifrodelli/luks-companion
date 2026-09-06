@@ -43,6 +43,8 @@ TARGET_DEV="${TARGET_DEV:-}"
 LV_BACKUP="${LV_BACKUP:-}"
 MOUNT_BACKUP="${MOUNT_BACKUP:-}"
 
+WEBDAV_SHARE_DIR="/run/luks_webdav_shares"
+
 # Construct full LVM paths
 LV_CRYPTO_PATH="/dev/${VG_NAME}/${LV_CRYPTO}"
 
@@ -168,6 +170,7 @@ safe_power_off_sequence() {
     if [ "$ENABLE_WEBDAV" = "true" ]; then
         echo "  -> Stop del servizio WebDAV..."
         systemctl stop webdav 2>/dev/null || true
+        rm -rf "$WEBDAV_SHARE_DIR" 2>/dev/null || true
     fi
 
     echo "  -> Flush buffer RAM (sync)..."
@@ -389,9 +392,27 @@ if [ -n "$LV_BACKUP_PATH" ] && [ -n "$MOUNT_BACKUP" ]; then
 fi
 
 if [ "$ENABLE_WEBDAV" = "true" ]; then
-    echo "[*] Avvio del servizio WebDAV..."
-    systemctl start webdav 2>/dev/null || echo "[!] WARNING: Impossibile avviare webdav.service" >&2
-    echo "[✓] Server WebDAV attivo!"
+    echo "[*] Configurazione ambito WebDAV in RAM (${WEBDAV_SHARE_DIR})..."
+    mkdir -p "$WEBDAV_SHARE_DIR"
+    rm -rf "${WEBDAV_SHARE_DIR:?}"/*
+
+    # Symlink primary mount point
+    crypto_folder_name=$(basename "$MOUNT_CRYPTO")
+    ln -snf "$MOUNT_CRYPTO" "${WEBDAV_SHARE_DIR}/${crypto_folder_name}"
+
+    # Symlink secondary mount point if configured and mounted
+    if [ -n "$MOUNT_BACKUP" ] && mountpoint -q "$MOUNT_BACKUP"; then
+        backup_folder_name=$(basename "$MOUNT_BACKUP")
+        ln -snf "$MOUNT_BACKUP" "${WEBDAV_SHARE_DIR}/${backup_folder_name}"
+    fi
+
+    if [ -f "/etc/webdav/config.yaml" ]; then
+        sed -i "s|scope: \".*\"|scope: \"${WEBDAV_SHARE_DIR}\"|g" /etc/webdav/config.yaml 2>/dev/null || true
+    fi
+
+    echo "[*] Avvio/Riavvio del servizio WebDAV..."
+    systemctl restart webdav 2>/dev/null || systemctl start webdav 2>/dev/null || echo "[!] WARNING: Impossibile avviare webdav.service" >&2
+    echo "[✓] Server WebDAV attivo ed isolato sulle sole cartelle di mount!"
 fi
 
 if [ "$RELOAD_SAMBA" = "true" ]; then
