@@ -12,6 +12,17 @@ if [ "$(id -u)" -ne 0 ]; then
     exec sudo "$0" "$@"
 fi
 
+# -------------------------------------------------------------------
+# 0B. EXCLUSIVE EXECUTION LOCKING (FLOCK)
+# -------------------------------------------------------------------
+LOCK_FILE="/run/luks-manager.lock"
+exec 200>"$LOCK_FILE"
+if ! flock -n 200; then
+    echo "[!] ERRORE: Un'altra istanza di luks-manager è già in esecuzione!" >&2
+    echo "    Attendere la chiusura della sessione attiva prima di avviarne un'altra." >&2
+    exit 1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/.env"
 
@@ -37,6 +48,7 @@ USB_DETECT_TIMEOUT="${USB_DETECT_TIMEOUT:-40}"
 MAX_PASSPHRASE_TRIES="${MAX_PASSPHRASE_TRIES:-3}"
 SPINDOWN_WAIT_SEC="${SPINDOWN_WAIT_SEC:-3}"
 CUTOFF_GRACE_SEC="${CUTOFF_GRACE_SEC:-5}"
+IDLE_TIMEOUT_MIN="${IDLE_TIMEOUT_MIN:-30}"
 ENABLE_WEBDAV="${ENABLE_WEBDAV:-true}"
 RELOAD_SAMBA="${RELOAD_SAMBA:-false}"
 TARGET_DEV="${TARGET_DEV:-}"
@@ -156,6 +168,21 @@ detect_target_device() {
     echo ""
 }
 
+get_disk_io_stats() {
+    local dev="$1"
+    if [ -z "$dev" ] || [ ! -b "$dev" ]; then
+        echo "0 0"
+        return
+    fi
+    local dev_name
+    dev_name=$(basename "$dev")
+    if [ -f "/sys/block/${dev_name}/stat" ]; then
+        awk '{print $1, $5}' "/sys/block/${dev_name}/stat" 2>/dev/null || echo "0 0"
+    else
+        echo "0 0"
+    fi
+}
+
 safe_power_off_sequence() {
     # Ignore signals during teardown to guarantee atomic execution
     trap '' SIGINT SIGTERM SIGHUP
@@ -201,7 +228,7 @@ safe_power_off_sequence() {
             }
         fi
 
-        if [ -n "$MOUNT_BACKUP" ] && mountpoint -q "$MOUNT_BACKUP" 2>/dev/null; then
+        if [ -n "$MOUNT_BACKUP" ] && mountpoint -q "$MOUNT_BACKUP"; then
             umount "$MOUNT_BACKUP" 2>/dev/null || {
                 sleep 1
                 fuser -km -9 "$MOUNT_BACKUP" 2>/dev/null || true
@@ -436,9 +463,43 @@ else
 fi
 echo "==================================================================="
 echo " DISCO OPERATIVO E ACCESSIBILE DA TUTTI I DISPOSITIVI!"
-echo " Premi [INVIO] quando vuoi chiudere, sigillare e spegnere la 220V."
+if [ "$IDLE_TIMEOUT_MIN" -gt 0 ]; then
+    echo " Watchdog di inattività attivo: Spegnimento automatico dopo ${IDLE_TIMEOUT_MIN} min di inattività I/O."
+fi
+echo " Premi [INVIO] in qualsiasi momento per chiudere, sigillare e spegnere la 220V."
 echo "==================================================================="
-read -r -p "" || true
+
+# Interactive Watchdog & Session Loop
+if [ "$IDLE_TIMEOUT_MIN" -gt 0 ]; then
+    target_disk=$(detect_target_device)
+    last_stats=$(get_disk_io_stats "$target_disk")
+    idle_seconds=0
+    check_interval=15
+    max_idle_seconds=$((IDLE_TIMEOUT_MIN * 60))
+
+    while true; do
+        if read -r -t "$check_interval" -p "" 2>/dev/null; then
+            echo "[*] Chiusura manuale richiesta dall'utente (INVIO)..."
+            break
+        fi
+
+        current_stats=$(get_disk_io_stats "$target_disk")
+        if [ "$current_stats" == "$last_stats" ]; then
+            idle_seconds=$((idle_seconds + check_interval))
+            idle_min=$((idle_seconds / 60))
+            if [ "$idle_seconds" -ge "$max_idle_seconds" ]; then
+                echo -e "\n[!] WATCHDOG: Inattività I/O sul disco rilevata per ${idle_min} minuti (${IDLE_TIMEOUT_MIN}m max)."
+                echo "    Avvio procedura di smontaggio e spegnimento automatico..."
+                break
+            fi
+        else
+            idle_seconds=0
+            last_stats="$current_stats"
+        fi
+    done
+else
+    read -r -p "" || true
+fi
 
 # Reset trap for normal clean exit
 trap - SIGINT SIGTERM SIGHUP
