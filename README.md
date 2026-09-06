@@ -44,7 +44,7 @@ flowchart TD
             LVM["LVM2 Module (vgchange -ay)"]
             LUKS["LUKS2 / dm-crypt (Argon2id in RAM)"]
             Mounts["Mounted Volumes (/mnt/crypto_data)"]
-            WebDAV["Isolated WebDAV Server (/srv/webdav)"]
+            WebDAV["WebDAV Server (/mnt/crypto_data)"]
         end
         
         subgraph TEARDOWN ["Safe Teardown Routine"]
@@ -77,7 +77,7 @@ flowchart TD
     Orchestrator -->|3. Activate VG| LVM
     LVM -->|4. Decrypt via stdin| LUKS
     LUKS -->|5. Mount Filesystems| Mounts
-    Mounts -->|6. Bind-Mount & Start| WebDAV
+    Mounts -->|6. Start WebDAV| WebDAV
 
     %% Teardown Flow
     Orchestrator -->|7. Stop / Teardown| Sync
@@ -103,7 +103,7 @@ flowchart TD
 - 📦 **LVM2 + LUKS2 Support**: Handles complex multi-volume LVM setups containing both encrypted and plain partitions.
 - 🌐 **Dedicated Socket Daemon (`daemon/`)**: Provides a non-root UNIX domain socket (`/run/luks-manager.sock`) for seamless Web App integration.
 - 🖥️ **Desktop Web Dashboard (`web/`)**: Clean, responsive UI with real-time status, 3 unlock methods, and safe eject button.
-- 📁 **Lightweight WebDAV Subsystem**: Native image/video thumbnail support with isolated bind-mount directory scoping (`/srv/webdav`).
+- 📁 **Lightweight WebDAV Subsystem**: Native image/video thumbnail support serving the decrypted storage directly.
 
 ---
 

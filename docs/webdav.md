@@ -57,15 +57,17 @@ port: 9088
 cert: "" # Optional: Path to TLS certificate (/etc/ssl/certs/server.crt)
 key: ""  # Optional: Path to TLS private key (/etc/ssl/certs/server.key)
 auth: true
-directory: "/srv/webdav"
-scope: "/srv/webdav"
 
 users:
   - username: "admin"
     password: "{bcrypt}$2a$10$e83B1...YourBcryptHashHere..."
-    directory: "/srv/webdav"
-    scope: "/srv/webdav"
+    directory: "/mnt/crypto_data"
+    scope: "/"
     modify: true
+    rules:
+      - path: /.*
+        allow: true
+        modify: true
 ```
 
 ---
@@ -162,8 +164,8 @@ RELOAD_SAMBA=false
 
 ### Clean Permission Model (No `chmod 777`):
 1. The installer automatically creates a shared system group (`storage`) and adds your local user (`$SUDO_USER`) to it.
-2. When `luks-manager.sh` mounts the decrypted filesystem to `/mnt/crypto_data` and bind-mounts it to `/srv/webdav/crypto_data`:
+2. When `luks-manager.sh` mounts the decrypted filesystem to `/mnt/crypto_data`:
    - It sets group ownership to `STORAGE_GROUP` (`chgrp storage`).
    - It applies directory permissions with the **SGID bit** (`chmod 2775`), ensuring all newly created files and folders automatically inherit group write access.
-3. WebDAV serves strictly the mounted volume folders across your network with full read and write capabilities.
-4. On teardown, the script cleanly unmounts bind-mounts and stops `webdav.service` before unmounting the filesystem and initiating physical drive spindown.
+3. WebDAV serves the decrypted storage directly on `http://<ip>:9088/` with full read and write capabilities.
+4. On teardown, the script cleanly stops `webdav.service` before unmounting the filesystem and initiating physical drive spindown.

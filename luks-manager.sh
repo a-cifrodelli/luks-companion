@@ -77,8 +77,6 @@ MOUNT_BACKUP="${MOUNT_BACKUP:-}"
 STORAGE_GROUP="${STORAGE_GROUP:-storage}"
 STORAGE_PERMS="${STORAGE_PERMS:-2775}"
 
-WEBDAV_SHARE_DIR="${WEBDAV_SCOPE:-/srv/webdav}"
-
 # Construct full LVM paths
 LV_CRYPTO_PATH="/dev/${VG_NAME}/${LV_CRYPTO}"
 
@@ -274,12 +272,6 @@ safe_power_off_sequence() {
     if [ "$ENABLE_WEBDAV" = "true" ]; then
         echo "  -> Stop del servizio WebDAV..."
         systemctl stop webdav 2>/dev/null || true
-
-        echo "  -> Smontaggio bind-mount WebDAV..."
-        if [ -d "$WEBDAV_SHARE_DIR" ]; then
-            umount -l "$WEBDAV_SHARE_DIR"/* 2>/dev/null || true
-            rm -rf "${WEBDAV_SHARE_DIR:?}"/* 2>/dev/null || true
-        fi
     fi
 
     echo "  -> Flush buffer RAM (sync)..."
@@ -624,35 +616,14 @@ if [ -n "$LV_BACKUP_PATH" ] && [ -n "$MOUNT_BACKUP" ]; then
 fi
 
 if [ "$ENABLE_WEBDAV" = "true" ]; then
-    echo "[*] Configurazione ambito WebDAV isolato in ${WEBDAV_SHARE_DIR}..."
-    mkdir -p "$WEBDAV_SHARE_DIR"
-    if [ -n "${STORAGE_GROUP:-}" ] && getent group "$STORAGE_GROUP" >/dev/null 2>&1; then
-        chgrp "$STORAGE_GROUP" "$WEBDAV_SHARE_DIR" 2>/dev/null || true
-        chmod "${STORAGE_PERMS:-2775}" "$WEBDAV_SHARE_DIR" 2>/dev/null || true
-    fi
-    umount -l "$WEBDAV_SHARE_DIR"/* 2>/dev/null || true
-    rm -rf "${WEBDAV_SHARE_DIR:?}"/* 2>/dev/null || true
-
-    # Bind mount primary mount point
-    crypto_folder_name=$(basename "$MOUNT_CRYPTO")
-    mkdir -p "${WEBDAV_SHARE_DIR}/${crypto_folder_name}"
-    mount --bind "$MOUNT_CRYPTO" "${WEBDAV_SHARE_DIR}/${crypto_folder_name}"
-
-    # Bind mount secondary mount point if configured and mounted
-    if [ -n "$MOUNT_BACKUP" ] && mountpoint -q "$MOUNT_BACKUP"; then
-        backup_folder_name=$(basename "$MOUNT_BACKUP")
-        mkdir -p "${WEBDAV_SHARE_DIR}/${backup_folder_name}"
-        mount --bind "$MOUNT_BACKUP" "${WEBDAV_SHARE_DIR}/${backup_folder_name}"
-    fi
-
+    echo "[*] Avvio/Riavvio del servizio WebDAV su ${MOUNT_CRYPTO}..."
     if [ -f "/etc/webdav/config.yaml" ]; then
-        sed -i "s|directory: \".*\"|directory: \"${WEBDAV_SHARE_DIR}\"|g" /etc/webdav/config.yaml 2>/dev/null || true
-        sed -i "s|scope: \".*\"|scope: \"${WEBDAV_SHARE_DIR}\"|g" /etc/webdav/config.yaml 2>/dev/null || true
+        sed -i "s|directory: \".*\"|directory: \"${MOUNT_CRYPTO}\"|g" /etc/webdav/config.yaml 2>/dev/null || true
+        sed -i 's|scope: ".*"|scope: "/"|g' /etc/webdav/config.yaml 2>/dev/null || true
     fi
 
-    echo "[*] Avvio/Riavvio del servizio WebDAV..."
     systemctl restart webdav 2>/dev/null || systemctl start webdav 2>/dev/null || echo "[!] WARNING: Impossibile avviare webdav.service" >&2
-    echo "[✓] Server WebDAV attivo ed isolato sulle sole cartelle di mount!"
+    echo "[✓] Server WebDAV attivo su ${MOUNT_CRYPTO}!"
 fi
 
 if [ "$RELOAD_SAMBA" = "true" ]; then

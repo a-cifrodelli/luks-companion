@@ -42,7 +42,6 @@ if [ -z "${MOUNT_CRYPTO:-}" ]; then
 fi
 
 WEBDAV_PORT="${WEBDAV_PORT:-9088}"
-WEBDAV_SCOPE="${WEBDAV_SCOPE:-/srv/webdav}"
 STORAGE_GROUP="${STORAGE_GROUP:-storage}"
 STORAGE_PERMS="${STORAGE_PERMS:-2775}"
 
@@ -75,9 +74,9 @@ if [ -n "$REAL_USER" ] && [ "$REAL_USER" != "root" ]; then
     echo -e "  ${CLR_GREEN}[✓] Utente reale '${REAL_USER}' aggiunto al gruppo '${STORAGE_GROUP}'.${CLR_RESET}"
 fi
 
-mkdir -p "$WEBDAV_SCOPE"
-chgrp "$STORAGE_GROUP" "$WEBDAV_SCOPE" 2>/dev/null || true
-chmod "$STORAGE_PERMS" "$WEBDAV_SCOPE" 2>/dev/null || true
+mkdir -p "$MOUNT_CRYPTO"
+chgrp "$STORAGE_GROUP" "$MOUNT_CRYPTO" 2>/dev/null || true
+chmod "$STORAGE_PERMS" "$MOUNT_CRYPTO" 2>/dev/null || true
 
 # 2. DOWNLOAD & INSTALL BINARY
 echo -e "\n${CLR_CYAN}[2/5] Download del binario standalone WebDAV per Linux ARM64...${CLR_RESET}"
@@ -117,11 +116,11 @@ else
 fi
 
 # 4. POPULATE CONFIG FILE FROM TEMPLATE
-echo -e "\n${CLR_CYAN}[4/5] Generazione /etc/webdav/config.yaml (Scope: ${CLR_WHITE}${WEBDAV_SCOPE}${CLR_CYAN})...${CLR_RESET}"
+echo -e "\n${CLR_CYAN}[4/5] Generazione /etc/webdav/config.yaml (Mount: ${CLR_WHITE}${MOUNT_CRYPTO}${CLR_CYAN})...${CLR_RESET}"
 mkdir -p /etc/webdav
 
-export WEBDAV_USER WEBDAV_PASSWORD_HASH WEBDAV_SCOPE WEBDAV_PORT
-envsubst '$WEBDAV_USER $WEBDAV_PASSWORD_HASH $WEBDAV_SCOPE $WEBDAV_PORT' < "$YAML_TEMPLATE_FILE" > /etc/webdav/config.yaml
+export WEBDAV_USER WEBDAV_PASSWORD_HASH MOUNT_CRYPTO WEBDAV_PORT
+envsubst '$WEBDAV_USER $WEBDAV_PASSWORD_HASH $MOUNT_CRYPTO $WEBDAV_PORT' < "$YAML_TEMPLATE_FILE" > /etc/webdav/config.yaml
 
 chgrp "$STORAGE_GROUP" /etc/webdav/config.yaml 2>/dev/null || true
 chmod 640 /etc/webdav/config.yaml
@@ -135,6 +134,6 @@ systemctl daemon-reload
 echo -e "  ${CLR_GREEN}[✓] Servizio systemd registrato con successo!${CLR_RESET}"
 
 echo -e "\n${CLR_GREEN}=== INSTALLAZIONE COMPLETATA CON SUCCESSO! ===${CLR_RESET}"
-echo -e "Il server WebDAV è pronto sulla porta ${CLR_WHITE}${WEBDAV_PORT}${CLR_RESET} esponendo le sole cartelle montate in '${CLR_WHITE}${WEBDAV_SCOPE}${CLR_RESET}'."
+echo -e "Il server WebDAV è pronto sulla porta ${CLR_WHITE}${WEBDAV_PORT}${CLR_RESET} collegato direttamente al punto di mount '${CLR_WHITE}${MOUNT_CRYPTO}${CLR_RESET}'."
 echo -e "I permessi di scrittura sono protetti tramite il gruppo '${CLR_WHITE}${STORAGE_GROUP}${CLR_RESET}' (SGID ${STORAGE_PERMS})."
 echo -e "Verrà avviato automaticamente da ${CLR_BOLD}luks-manager.sh${CLR_RESET} quando il disco viene montato."
