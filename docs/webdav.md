@@ -36,8 +36,8 @@ curl -fsSL https://github.com/hacdias/webdav/releases/latest/download/linux-arm6
 sudo mv webdav /usr/local/bin/webdav
 sudo chmod +x /usr/local/bin/webdav
 
-# 3. Verify version
-webdav --version
+# 3. Verify installation
+webdav -h
 ```
 
 ---

@@ -21,7 +21,7 @@ tar -xzf "${TMP_DIR}/webdav.tar.gz" -C "$TMP_DIR"
 
 mv "${TMP_DIR}/webdav" /usr/local/bin/webdav
 chmod +x /usr/local/bin/webdav
-echo "[✓] Binario installato in /usr/local/bin/webdav (Versione: $(/usr/local/bin/webdav --version 2>&1 | head -n1))"
+echo "[✓] Binario installato con successo in /usr/local/bin/webdav"
 
 # 2. PROMPT FOR USER CREDENTIALS
 echo -e "\n[2/4] Configurazione utente WebDAV..."
