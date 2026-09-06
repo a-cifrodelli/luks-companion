@@ -101,6 +101,108 @@ async function updateStatus() {
             const webdavPortStr = data.webdav_port ? ` (Porta ${data.webdav_port})` : "";
             document.getElementById("valWebdav").textContent = data.webdav_active ? `Attivo${webdavPortStr}` : "Inattivo";
 
+            // Telemetry: S.M.A.R.T. & Hardware Health
+            const badgeSmartHealth = document.getElementById("badgeSmartHealth");
+            const badgeSmartTemp = document.getElementById("badgeSmartTemp");
+            const badgeSmartDevice = document.getElementById("badgeSmartDevice");
+
+            if (data.status === "stopped") {
+                if (badgeSmartHealth) {
+                    badgeSmartHealth.className = "badge badge-gray";
+                    badgeSmartHealth.textContent = "S.M.A.R.T.: Standby";
+                }
+                if (badgeSmartTemp) {
+                    badgeSmartTemp.className = "badge badge-gray";
+                    badgeSmartTemp.textContent = "🌡️ -- °C";
+                }
+                if (badgeSmartDevice) {
+                    badgeSmartDevice.textContent = "Disco: 0W Standby";
+                }
+            } else {
+                const smart = data.smart || {};
+                if (badgeSmartHealth) {
+                    if (smart.installed === false) {
+                        badgeSmartHealth.className = "badge badge-amber";
+                        badgeSmartHealth.textContent = "smartctl: Non installato";
+                        badgeSmartHealth.title = "Installa smartmontools sul server";
+                    } else if (smart.supported && smart.health === "PASSED") {
+                        badgeSmartHealth.className = "badge badge-green";
+                        badgeSmartHealth.textContent = "S.M.A.R.T.: Integro (PASSED)";
+                    } else if (smart.supported && smart.health === "FAILED") {
+                        badgeSmartHealth.className = "badge badge-red";
+                        badgeSmartHealth.textContent = "S.M.A.R.T.: ALLARME GUASTO (FAILED)";
+                    } else if (smart.reason) {
+                        badgeSmartHealth.className = "badge badge-gray";
+                        badgeSmartHealth.textContent = `S.M.A.R.T.: ${smart.reason}`;
+                    } else {
+                        badgeSmartHealth.className = "badge badge-gray";
+                        badgeSmartHealth.textContent = "S.M.A.R.T.: N/D";
+                    }
+                }
+
+                if (badgeSmartTemp) {
+                    if (smart.temperature_c !== null && smart.temperature_c !== undefined) {
+                        const temp = smart.temperature_c;
+                        if (temp >= 55) {
+                            badgeSmartTemp.className = "badge badge-red";
+                            badgeSmartTemp.textContent = `🌡️ ${temp} °C (Caldo)`;
+                        } else if (temp >= 45) {
+                            badgeSmartTemp.className = "badge badge-amber";
+                            badgeSmartTemp.textContent = `🌡️ ${temp} °C`;
+                        } else {
+                            badgeSmartTemp.className = "badge badge-green";
+                            badgeSmartTemp.textContent = `🌡️ ${temp} °C`;
+                        }
+                    } else {
+                        badgeSmartTemp.className = "badge badge-gray";
+                        badgeSmartTemp.textContent = "🌡️ -- °C";
+                    }
+                }
+
+                if (badgeSmartDevice) {
+                    if (smart.model) {
+                        const devName = smart.device ? ` (${smart.device})` : "";
+                        badgeSmartDevice.textContent = `Disco: ${smart.model}${devName}`;
+                    } else {
+                        badgeSmartDevice.textContent = "Disco: Attivo";
+                    }
+                }
+            }
+
+            // Telemetry: Storage Capacity Bars
+            const volContainer = document.getElementById("volumeBarsContainer");
+            if (volContainer) {
+                if (data.volumes && data.volumes.length > 0) {
+                    let html = "";
+                    data.volumes.forEach(vol => {
+                        let fillClass = "";
+                        if (vol.used_percent >= 90) fillClass = "danger";
+                        else if (vol.used_percent >= 75) fillClass = "warn";
+
+                        html += `
+                            <div class="volume-bar-card">
+                                <div class="volume-info">
+                                    <span class="volume-name">📁 ${vol.name} <small style="color:var(--text-muted);font-weight:normal;">(${vol.mountpoint})</small></span>
+                                    <span class="volume-usage">${vol.used_human} / ${vol.total_human} (${vol.used_percent}%)</span>
+                                </div>
+                                <div class="progress-track">
+                                    <div class="progress-fill ${fillClass}" style="width: ${vol.used_percent}%"></div>
+                                </div>
+                                <div class="volume-footer">
+                                    <span>Spazio disponibile: ${vol.free_human}</span>
+                                    <span>Capacità totale: ${vol.total_human}</span>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    volContainer.innerHTML = html;
+                } else if (data.status === "stopped") {
+                    volContainer.innerHTML = `<div class="volume-placeholder"><span>Storage in standby (0W). I dettagli dello spazio disco e telemetria S.M.A.R.T. saranno disponibili allo sblocco.</span></div>`;
+                } else {
+                    volContainer.innerHTML = `<div class="volume-placeholder"><span>Nessun volume attualmente montato.</span></div>`;
+                }
+            }
+
             // Enable/Disable Action Buttons based on state
             const unlockBtn = document.getElementById("btnUnlock");
             const stopBtn = document.getElementById("btnStop");

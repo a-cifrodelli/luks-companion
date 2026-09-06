@@ -9,6 +9,7 @@ import socket
 import subprocess
 import signal
 import base64
+import shutil
 
 SOCKET_PATH = "/run/luks-manager.sock"
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -26,12 +27,124 @@ def load_env():
                     env[key.strip()] = val.strip().strip('"').strip("'")
     return env
 
+def format_bytes(bytes_num):
+    if bytes_num is None or bytes_num < 0:
+        return "0 B"
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB', 'PB']:
+        if bytes_num < 1024.0 or unit == 'PB':
+            return f"{bytes_num:.1f} {unit}" if unit in ['GB', 'TB', 'PB'] else f"{int(bytes_num)} {unit}"
+        bytes_num /= 1024.0
+    return f"{bytes_num:.1f} PB"
+
+def get_volume_stats(path, name):
+    if not path or not os.path.ismount(path):
+        return None
+    try:
+        st = os.statvfs(path)
+        total = st.f_blocks * st.f_frsize
+        free = st.f_bavail * st.f_frsize
+        used = total - free
+        pct = round((used / total * 100), 1) if total > 0 else 0
+        return {
+            "name": name,
+            "mountpoint": path,
+            "total_bytes": total,
+            "used_bytes": used,
+            "free_bytes": free,
+            "used_percent": pct,
+            "total_human": format_bytes(total),
+            "used_human": format_bytes(used),
+            "free_human": format_bytes(free),
+        }
+    except Exception:
+        return None
+
+def find_smartctl_bin():
+    found = shutil.which("smartctl")
+    if found:
+        return found
+    for cand in ["/usr/sbin/smartctl", "/usr/bin/smartctl", "/sbin/smartctl", "/bin/smartctl"]:
+        if os.path.exists(cand) and os.access(cand, os.X_OK):
+            return cand
+    return None
+
+def find_target_block_device(vg_name, target_dev_cfg):
+    if target_dev_cfg and os.path.exists(target_dev_cfg):
+        return target_dev_cfg
+    if vg_name:
+        try:
+            res = subprocess.check_output(
+                ["pvs", "--noheadings", "-o", "pv_name", "-g", vg_name],
+                stderr=subprocess.DEVNULL, text=True, timeout=2
+            ).strip()
+            if res:
+                pv = res.splitlines()[0].strip()
+                try:
+                    parent = subprocess.check_output(
+                        ["lsblk", "-no", "PKNAME", pv],
+                        stderr=subprocess.DEVNULL, text=True, timeout=2
+                    ).strip()
+                    if parent and os.path.exists(f"/dev/{parent}"):
+                        return f"/dev/{parent}"
+                except Exception:
+                    pass
+                if os.path.exists(pv):
+                    return pv
+        except Exception:
+            pass
+    return None
+
+def get_smart_data(target_dev):
+    smartctl = find_smartctl_bin()
+    if not smartctl:
+        return {"supported": False, "installed": False, "reason": "smartctl non installato (sudo pacman -S smartmontools)"}
+    if not target_dev or not os.path.exists(target_dev):
+        return {"supported": False, "installed": True, "device": None, "reason": "Disco spento / inerte (0W Standby)"}
+
+    try:
+        out = subprocess.check_output(
+            [smartctl, "-j", "-i", "-H", "-A", target_dev],
+            stderr=subprocess.DEVNULL, text=True, timeout=3
+        )
+        data = json.loads(out)
+        
+        health = "UNKNOWN"
+        smart_status = data.get("smart_status", {})
+        if "passed" in smart_status:
+            health = "PASSED" if smart_status["passed"] else "FAILED"
+        
+        temp = None
+        if "temperature" in data and "current" in data["temperature"]:
+            temp = data["temperature"]["current"]
+        elif "ata_smart_attributes" in data and "table" in data["ata_smart_attributes"]:
+            for attr in data["ata_smart_attributes"]["table"]:
+                if attr.get("name") in ["Temperature_Celsius", "Airflow_Temperature_Cel"]:
+                    temp = attr.get("raw", {}).get("value")
+                    break
+
+        model = data.get("model_name") or data.get("device", {}).get("model_name") or data.get("model_family") or "USB Drive"
+        serial = data.get("serial_number", "")
+
+        return {
+            "supported": True,
+            "installed": True,
+            "device": target_dev,
+            "health": health,
+            "temperature_c": temp,
+            "model": model,
+            "serial": serial
+        }
+    except Exception:
+        return {"supported": False, "installed": True, "device": target_dev, "reason": "S.M.A.R.T. non disponibile per questo bridge USB"}
+
 def get_status():
     env = load_env()
     mapper_name = env.get("MAPPER_NAME", "")
     mount_crypto = env.get("MOUNT_CRYPTO", "")
+    mount_backup = env.get("MOUNT_BACKUP", "")
     vg_name = env.get("VG_NAME", "")
     lv_crypto = env.get("LV_CRYPTO", "")
+    target_dev_cfg = env.get("TARGET_DEV", "")
 
     # A Volume Group is active if its /dev/<VG_NAME> exists or if /dev/mapper/<VG>-<LV> exists
     vg_active = False
@@ -45,6 +158,21 @@ def get_status():
     webdav_active = subprocess.call(["systemctl", "is-active", "--quiet", "webdav"]) == 0
     webdav_port = env.get("WEBDAV_PORT", "")
 
+    # Volume Storage Statistics
+    volumes = []
+    v_crypto = get_volume_stats(mount_crypto, "Dati Cifrati (crypto_data)")
+    if v_crypto:
+        volumes.append(v_crypto)
+    
+    if mount_backup:
+        v_backup = get_volume_stats(mount_backup, "Backup (backup_data)")
+        if v_backup:
+            volumes.append(v_backup)
+
+    # S.M.A.R.T. Telemetry
+    target_dev = find_target_block_device(vg_name, target_dev_cfg) if (vg_active or is_unlocked) else None
+    smart_info = get_smart_data(target_dev)
+
     return {
         "status": "mounted" if is_mounted else ("unlocked" if is_unlocked else "stopped"),
         "unlocked": is_unlocked,
@@ -54,7 +182,10 @@ def get_status():
         "webdav_port": webdav_port,
         "vg_name": vg_name,
         "mapper_name": mapper_name,
-        "mount_crypto": mount_crypto
+        "mount_crypto": mount_crypto,
+        "volumes": volumes,
+        "smart": smart_info,
+        "smartctl_installed": find_smartctl_bin() is not None
     }
 
 def send_response(conn, payload):

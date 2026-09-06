@@ -103,6 +103,7 @@ flowchart TD
 - 📦 **LVM2 + LUKS2 Support**: Handles complex multi-volume LVM setups containing both encrypted and plain partitions.
 - 🌐 **Dedicated Socket Daemon (`daemon/`)**: Provides a non-root UNIX domain socket (`/run/luks-manager.sock`) for seamless Web App integration.
 - 🖥️ **Desktop Web Dashboard (`web/`)**: Clean, responsive UI with real-time status, 3 unlock methods, and safe eject button.
+- 📊 **Live Telemetry & S.M.A.R.T. Health**: Real-time volume capacity progress bars, drive temperature (`°C`), and hardware integrity checks via `smartctl`.
 - 📁 **Lightweight WebDAV Subsystem**: Native image/video thumbnail support serving the decrypted storage directly.
 
 ---
@@ -113,13 +114,21 @@ Ensure your Linux host has the required utilities installed:
 
 ### On Arch Linux ARM
 ```bash
-sudo pacman -S --needed cryptsetup lvm2 udisks2 psmisc curl socat python
+sudo pacman -S --needed cryptsetup lvm2 udisks2 psmisc curl socat python smartmontools
 ```
 
 ### On Debian / Raspberry Pi OS
 ```bash
-sudo apt update && sudo apt install -y cryptsetup lvm2 udisks2 psmisc curl socat python3
+sudo apt update && sudo apt install -y cryptsetup lvm2 udisks2 psmisc curl socat python3 smartmontools
 ```
+
+> [!TIP]
+> **Rilevamento del binario `smartctl`**:
+> Il demone rileva automaticamente `smartctl` dal `$PATH` di sistema o cercandolo nei percorsi standard (`/usr/sbin/smartctl`, `/usr/bin/smartctl`, `/sbin/smartctl`, `/bin/smartctl`).
+> * Su Arch Linux ARM il binario è posizionato in `/usr/bin/smartctl`.
+> * Su Debian / Ubuntu / Raspberry Pi OS è posizionato in `/usr/sbin/smartctl`.
+>
+> In caso di box o bridge USB/SATA esterni, `luks-managerd` interroga automaticamente gli attributi S.M.A.R.T. e la temperatura in formato JSON nativo (`smartctl -j -i -H -A /dev/sdX`). Se il bridge USB non espone i comandi ATA pass-through, il sistema degrada elegantemente senza bloccare l'interfaccia.
 
 ---
 
