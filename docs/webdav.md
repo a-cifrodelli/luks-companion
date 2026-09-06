@@ -54,20 +54,14 @@ When running `./scripts/install-webdav.sh`, the installer automatically reads yo
 # ===================================================================
 address: 0.0.0.0
 port: 9088
-cert: "" # Optional: Path to TLS certificate (/etc/ssl/certs/server.crt)
-key: ""  # Optional: Path to TLS private key (/etc/ssl/certs/server.key)
-auth: true
+directory: "/srv/storage"
+prefix: /
+permissions: CRUD
 
 users:
   - username: "admin"
     password: "{bcrypt}$2a$10$e83B1...YourBcryptHashHere..."
-    directory: "/srv/storage"
-    scope: "/"
-    modify: true
-    rules:
-      - path: /.*
-        allow: true
-        modify: true
+    permissions: CRUD
 ```
 
 ---

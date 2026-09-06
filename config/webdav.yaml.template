@@ -5,17 +5,11 @@
 # ===================================================================
 address: 0.0.0.0
 port: ${WEBDAV_PORT}
-cert: ""
-key: ""
-auth: true
+directory: "${STORAGE_BASE}"
+prefix: /
+permissions: CRUD
 
 users:
   - username: "${WEBDAV_USER}"
     password: "${WEBDAV_PASSWORD_HASH}"
-    directory: "${STORAGE_BASE}"
-    scope: "/"
-    modify: true
-    rules:
-      - path: /.*
-        allow: true
-        modify: true
+    permissions: CRUD
