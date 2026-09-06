@@ -7,7 +7,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/webdav --config /etc/webdav/config.yaml
+ExecStart=/usr/local/bin/webdav -c /etc/webdav/config.yaml
 Restart=on-failure
 RestartSec=3
 

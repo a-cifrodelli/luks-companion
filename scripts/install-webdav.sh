@@ -69,7 +69,7 @@ read -rs -p "Inserisci password per utente '$WEBDAV_USER': " WEBDAV_PASS
 echo ""
 
 # Generate Bcrypt hash using python
-WEBDAV_PASSWORD_HASH=$(python3 -c "
+RAW_HASH=$(python3 -c "
 import sys
 try:
     import bcrypt
@@ -78,6 +78,12 @@ except ImportError:
     import subprocess
     print(subprocess.check_output(['python3', '-c', 'import hashlib; print(hashlib.sha256(sys.argv[1].encode()).hexdigest())'], text=True).strip())
 " "$WEBDAV_PASS" 2>/dev/null || echo "$WEBDAV_PASS")
+
+if [[ "$RAW_HASH" == \$2* ]]; then
+    WEBDAV_PASSWORD_HASH="{bcrypt}${RAW_HASH}"
+else
+    WEBDAV_PASSWORD_HASH="${RAW_HASH}"
+fi
 
 # 3. POPULATE CONFIG FILE FROM TEMPLATE
 echo "[3/4] Generazione /etc/webdav/config.yaml dal template (Scope: ${WEBDAV_SCOPE})..."
