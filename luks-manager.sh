@@ -220,7 +220,7 @@ is_system_disk() {
 detect_target_device() {
     # 1. Resolve strictly via LVM Physical Volume for VG_NAME (completely silent)
     local pv_dev
-    pv_dev=$(pvs --noheadings -o pv_name -g "$VG_NAME" >/dev/null 2>&1 | tr -d ' ' | head -n1 || echo "")
+    pv_dev=$(pvs --noheadings -o pv_name "$VG_NAME" 2>/dev/null | tr -d ' ' | head -n1 || echo "")
     if [ -z "$pv_dev" ]; then
         pv_dev=$(pvs --noheadings -o pv_name 2>/dev/null | tr -d ' ' | head -n1 || echo "")
     fi
@@ -282,6 +282,10 @@ safe_power_off_sequence() {
     fi
     TEARDOWN_DONE=true
 
+    # Detect physical target device AT THE VERY START before unmounting / closing LVM
+    local final_dev
+    final_dev=$(detect_target_device)
+
     echo -e "\n[*] Esecuzione procedura di arresto e teardown sicuro..."
 
     if [ "$ENABLE_WEBDAV" = "true" ]; then
@@ -331,6 +335,7 @@ safe_power_off_sequence() {
             fi
             sleep 1
         done
+        dmsetup remove -f "$MAPPER_NAME" 2>/dev/null || true
         VOLUME_IS_UNLOCKED=false
     fi
 

@@ -10,11 +10,14 @@ import subprocess
 import signal
 import base64
 import shutil
+import threading
 
 SOCKET_PATH = "/run/luks-manager.sock"
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_FILE = os.path.join(BASE_DIR, ".env")
 MANAGER_SCRIPT = os.path.join(BASE_DIR, "luks-manager.sh")
+
+action_lock = threading.Lock()
 
 def load_env():
     env = {}
@@ -187,32 +190,36 @@ def get_status():
     mount_crypto = os.path.join(storage_base, mapper_name) if mapper_name else ""
     mount_backup = os.path.join(storage_base, lv_backup) if lv_backup else ""
 
-    # A Volume Group is active if its /dev/<VG_NAME> exists or if /dev/mapper/<VG>-<LV> exists
+    # Check physical block device presence on USB/SCSI bus
+    target_dev = find_target_block_device(vg_name, mapper_name, mount_crypto, target_dev_cfg)
+    disk_present = target_dev is not None and os.path.exists(target_dev)
+
+    is_mounted = os.path.ismount(mount_crypto) if mount_crypto else False
+    is_unlocked = (os.path.exists(f"/dev/mapper/{mapper_name}") and disk_present) if mapper_name else False
+
     vg_active = False
-    if vg_name:
+    if disk_present and vg_name:
         vg_dev = f"/dev/{vg_name}"
         mapper_lv = f"/dev/mapper/{vg_name}-{lv_crypto}" if lv_crypto else ""
         vg_active = (os.path.exists(vg_dev) and os.path.isdir(vg_dev)) or (mapper_lv and os.path.exists(mapper_lv))
 
-    is_unlocked = os.path.exists(f"/dev/mapper/{mapper_name}") if mapper_name else False
-    is_mounted = os.path.ismount(mount_crypto) if mount_crypto else False
     webdav_active = subprocess.call(["systemctl", "is-active", "--quiet", "webdav"]) == 0
     webdav_port = env.get("WEBDAV_PORT", "")
 
     # Volume Storage Statistics
     volumes = []
-    v_crypto = get_volume_stats(mount_crypto, "Dati Cifrati (crypto_data)")
-    if v_crypto:
-        volumes.append(v_crypto)
-    
-    if mount_backup:
-        v_backup = get_volume_stats(mount_backup, "Backup (backup_data)")
-        if v_backup:
-            volumes.append(v_backup)
+    if is_mounted:
+        v_crypto = get_volume_stats(mount_crypto, "Dati Cifrati (crypto_data)")
+        if v_crypto:
+            volumes.append(v_crypto)
+        
+        if mount_backup:
+            v_backup = get_volume_stats(mount_backup, "Backup (backup_data)")
+            if v_backup:
+                volumes.append(v_backup)
 
     # S.M.A.R.T. Telemetry
-    target_dev = find_target_block_device(vg_name, mapper_name, mount_crypto, target_dev_cfg) if (vg_active or is_unlocked or is_mounted) else None
-    smart_info = get_smart_data(target_dev)
+    smart_info = get_smart_data(target_dev if disk_present else None)
 
     return {
         "status": "mounted" if is_mounted else ("unlocked" if is_unlocked else "stopped"),
@@ -226,7 +233,8 @@ def get_status():
         "mount_crypto": mount_crypto,
         "volumes": volumes,
         "smart": smart_info,
-        "smartctl_installed": find_smartctl_bin() is not None
+        "smartctl_installed": find_smartctl_bin() is not None,
+        "busy": action_lock.locked()
     }
 
 def send_response(conn, payload):
@@ -254,75 +262,89 @@ def handle_client(conn):
             send_response(conn, {"status": "ok", "data": get_status()})
 
         elif action == "unlock":
-            key_payload = None
-            
-            # 1. Base64 encoded binary keyfile (from keyfile tab or stego image)
-            if req.get("keyfile_base64"):
-                try:
-                    key_payload = base64.b64decode(req["keyfile_base64"])
-                except Exception as e:
-                    send_response(conn, {"status": "error", "message": f"Decodifica keyfile base64 fallita: {e}"})
-                    return
-
-            # 2. Plain passphrase string (from passphrase tab) - NO trailing newline!
-            elif req.get("passphrase"):
-                key_payload = req["passphrase"].encode('utf-8')
-
-            if not key_payload:
-                send_response(conn, {"status": "error", "message": "Nessuna passphrase o keyfile fornito"})
+            if not action_lock.acquire(blocking=False):
+                send_response(conn, {"status": "busy", "message": "Un'altra operazione è già in corso sul disco..."})
                 return
 
-            proc = subprocess.Popen(
-                ["/usr/bin/env", "bash", MANAGER_SCRIPT, "unlock", "--no-watchdog"],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-            stdout_bytes, stderr_bytes = proc.communicate(input=key_payload)
-            
-            # Wipe key payload from RAM
-            del key_payload
+            try:
+                key_payload = None
+                
+                # 1. Base64 encoded binary keyfile (from keyfile tab or stego image)
+                if req.get("keyfile_base64"):
+                    try:
+                        key_payload = base64.b64decode(req["keyfile_base64"])
+                    except Exception as e:
+                        send_response(conn, {"status": "error", "message": f"Decodifica keyfile base64 fallita: {e}"})
+                        return
 
-            stdout = stdout_bytes.decode('utf-8', errors='replace').strip()
-            stderr = stderr_bytes.decode('utf-8', errors='replace').strip()
-            
-            if proc.returncode == 0:
-                send_response(conn, {
-                    "status": "ok",
-                    "message": "Volume sbloccato e montato con successo",
-                    "output": stdout,
-                    "data": get_status()
-                })
-            else:
-                send_response(conn, {
-                    "status": "error",
-                    "message": stderr or stdout or "Errore durante lo sblocco",
-                    "data": get_status()
-                })
+                # 2. Plain passphrase string (from passphrase tab) - NO trailing newline!
+                elif req.get("passphrase"):
+                    key_payload = req["passphrase"].encode('utf-8')
+
+                if not key_payload:
+                    send_response(conn, {"status": "error", "message": "Nessuna passphrase o keyfile fornito"})
+                    return
+
+                proc = subprocess.Popen(
+                    ["/usr/bin/env", "bash", MANAGER_SCRIPT, "unlock", "--no-watchdog"],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                stdout_bytes, stderr_bytes = proc.communicate(input=key_payload)
+                
+                # Wipe key payload from RAM
+                del key_payload
+
+                stdout = stdout_bytes.decode('utf-8', errors='replace').strip()
+                stderr = stderr_bytes.decode('utf-8', errors='replace').strip()
+                
+                if proc.returncode == 0:
+                    send_response(conn, {
+                        "status": "ok",
+                        "message": "Volume sbloccato e montato con successo",
+                        "output": stdout,
+                        "data": get_status()
+                    })
+                else:
+                    send_response(conn, {
+                        "status": "error",
+                        "message": stderr or stdout or "Errore durante lo sblocco",
+                        "data": get_status()
+                    })
+            finally:
+                action_lock.release()
 
         elif action == "stop":
-            proc = subprocess.Popen(
-                ["/usr/bin/env", "bash", MANAGER_SCRIPT, "stop"],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            stdout, stderr = proc.communicate()
-            
-            if proc.returncode == 0:
-                send_response(conn, {
-                    "status": "ok",
-                    "message": "Procedura di teardown e spegnimento completata",
-                    "output": stdout.strip(),
-                    "data": get_status()
-                })
-            else:
-                send_response(conn, {
-                    "status": "error",
-                    "message": stderr.strip() or stdout.strip() or "Errore durante l'arresto",
-                    "data": get_status()
-                })
+            if not action_lock.acquire(blocking=False):
+                send_response(conn, {"status": "busy", "message": "Operazione di arresto già in corso..."})
+                return
+
+            try:
+                proc = subprocess.Popen(
+                    ["/usr/bin/env", "bash", MANAGER_SCRIPT, "stop"],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                stdout, stderr = proc.communicate()
+                
+                if proc.returncode == 0:
+                    send_response(conn, {
+                        "status": "ok",
+                        "message": "Procedura di teardown e spegnimento completata",
+                        "output": stdout.strip(),
+                        "data": get_status()
+                    })
+                else:
+                    send_response(conn, {
+                        "status": "error",
+                        "message": stderr.strip() or stdout.strip() or "Errore durante l'arresto",
+                        "data": get_status()
+                    })
+            finally:
+                action_lock.release()
 
         else:
             send_response(conn, {"status": "error", "message": f"Azione '{action}' sconosciuta"})
@@ -347,7 +369,7 @@ def main():
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(SOCKET_PATH)
     os.chmod(SOCKET_PATH, 0o666)
-    server.listen(10)
+    server.listen(15)
 
     def cleanup(signum, frame):
         server.close()
@@ -356,7 +378,7 @@ def main():
                 os.remove(SOCKET_PATH)
             except OSError:
                 pass
-        sys.exit(0)
+            sys.exit(0)
 
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
@@ -365,7 +387,7 @@ def main():
     while True:
         try:
             conn, _ = server.accept()
-            handle_client(conn)
+            threading.Thread(target=handle_client, args=(conn,), daemon=True).start()
         except (BrokenPipeError, ConnectionResetError):
             pass
         except Exception as e:

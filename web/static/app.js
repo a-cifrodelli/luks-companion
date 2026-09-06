@@ -206,12 +206,41 @@ async function updateStatus() {
             // Enable/Disable Action Buttons based on state
             const unlockBtn = document.getElementById("btnUnlock");
             const stopBtn = document.getElementById("btnStop");
-            if (data.mounted || data.unlocked) {
-                if (unlockBtn) unlockBtn.disabled = true;
-                if (stopBtn) stopBtn.disabled = false;
+
+            if (data.busy) {
+                if (data.status === "mounted" || data.status === "unlocked" || data.mounted || data.unlocked) {
+                    if (stopBtn) {
+                        stopBtn.disabled = true;
+                        stopBtn.textContent = "⏳ Operazione in corso...";
+                    }
+                    if (unlockBtn) unlockBtn.disabled = true;
+                } else {
+                    if (unlockBtn) {
+                        unlockBtn.disabled = true;
+                        unlockBtn.textContent = "⏳ Operazione in corso...";
+                    }
+                    if (stopBtn) stopBtn.disabled = true;
+                }
             } else {
-                if (unlockBtn) unlockBtn.disabled = false;
-                if (stopBtn) stopBtn.disabled = true;
+                if (data.status === "mounted" || data.status === "unlocked" || data.mounted || data.unlocked) {
+                    if (unlockBtn) {
+                        unlockBtn.disabled = true;
+                        unlockBtn.textContent = "🔑 Sblocca Storage";
+                    }
+                    if (stopBtn) {
+                        stopBtn.disabled = false;
+                        stopBtn.textContent = "🛑 Espelli & Spegni 220V";
+                    }
+                } else {
+                    if (unlockBtn) {
+                        unlockBtn.disabled = false;
+                        unlockBtn.textContent = "🔑 Sblocca Storage";
+                    }
+                    if (stopBtn) {
+                        stopBtn.disabled = true;
+                        stopBtn.textContent = "🛑 Espelli & Spegni 220V";
+                    }
+                }
             }
 
             // Update Studio AddKey command dynamically if VG / LV known
