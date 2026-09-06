@@ -258,6 +258,14 @@ get_disk_io_stats() {
     fi
 }
 
+notify_discord() {
+    local event="$1"
+    local msg="${2:-}"
+    if [ -f "${SCRIPT_DIR}/scripts/notify-discord.sh" ]; then
+        bash "${SCRIPT_DIR}/scripts/notify-discord.sh" "$event" "$msg" >/dev/null 2>&1 || true
+    fi
+}
+
 safe_power_off_sequence() {
     # Ignore signals during teardown to guarantee atomic execution
     trap '' SIGINT SIGTERM SIGHUP
@@ -431,6 +439,7 @@ fi
 if [ "$COMMAND" = "stop" ]; then
     echo "=== LUKS MANAGER: ARRESTO E SMONTAGGIO RICHIESTO ==="
     safe_power_off_sequence
+    notify_discord "lock"
     echo -e "\n[✓] ARRESTO COMPLETATO CON SUCCESSO!"
     echo "    - Filesystem smontati."
     echo "    - Chiave LUKS distrutta dalla RAM."
@@ -497,6 +506,7 @@ done
 
 if [ "$DEV_FOUND" = false ]; then
     echo "[!] ERRORE: Disco non rilevato entro ${USB_DETECT_TIMEOUT} secondi." >&2
+    notify_discord "error" "Disco non rilevato entro ${USB_DETECT_TIMEOUT}s sul bus USB."
     safe_power_off_sequence
     exit 1
 fi
@@ -525,6 +535,7 @@ else
     if [ -n "$CLI_KEYFILE" ]; then
         if [ ! -f "$CLI_KEYFILE" ]; then
             echo "[!] ERRORE: File chiave specificato '$CLI_KEYFILE' non trovato!" >&2
+            notify_discord "error" "File chiave specificato non trovato: $CLI_KEYFILE"
             safe_power_off_sequence
             exit 1
         fi
@@ -534,6 +545,7 @@ else
             echo "[✓] Volume sbloccato con successo tramite keyfile!"
         else
             echo "[!] ERRORE: Chiave non valida per '$LV_CRYPTO_PATH'." >&2
+            notify_discord "error" "Chiave non valida per $LV_CRYPTO_PATH"
             safe_power_off_sequence
             exit 1
         fi
@@ -547,6 +559,7 @@ else
         else
             cleanup_key
             echo "[!] ERRORE: Chiave/Passphrase da stdin non valida o errata." >&2
+            notify_discord "error" "Tentativo di sblocco fallito (chiave/passphrase errata)."
             safe_power_off_sequence
             exit 1
         fi
@@ -575,6 +588,7 @@ else
         done
     else
         echo "[!] ERRORE: Nessun input chiave o passphrase ricevuto da stdin." >&2
+        notify_discord "error" "Nessun input chiave o passphrase ricevuto da stdin."
         safe_power_off_sequence
         exit 1
     fi
@@ -583,6 +597,7 @@ fi
 if [ "$VOLUME_IS_UNLOCKED" = false ]; then
     echo -e "\n[!] ERRORE: Impossibile sbloccare il container LUKS." >&2
     echo "    Esecuzione spegnimento di sicurezza della presa e pulizia..." >&2
+    notify_discord "error" "Impossibile sbloccare il container LUKS (superati tentativi massimi)."
     safe_power_off_sequence
     exit 1
 fi
@@ -645,6 +660,9 @@ else
 fi
 echo "==================================================================="
 
+# Trigger Discord notification on unlock
+notify_discord "unlock"
+
 # In non-interactive mode or --no-watchdog / daemon mode, exit cleanly now!
 if [ "$NO_WATCHDOG" = true ] || [ ! -t 0 ]; then
     echo " DISCO OPERATIVO E MONTATO CON SUCCESSO!"
@@ -687,6 +705,7 @@ if [ "$IDLE_TIMEOUT_MIN" -gt 0 ]; then
             if [ "$idle_seconds" -ge "$max_idle_seconds" ]; then
                 echo -e "\n[!] WATCHDOG: Inattività I/O sul disco rilevata per ${idle_min} minuti (${IDLE_TIMEOUT_MIN}m max)."
                 echo "    Avvio procedura di smontaggio e spegnimento automatico..."
+                notify_discord "watchdog"
                 break
             fi
         else
@@ -708,6 +727,7 @@ trap - SIGINT SIGTERM SIGHUP
 # ===================================================================
 echo -e "\n[6/7] Esecuzione procedura di arresto sicura..."
 safe_power_off_sequence
+notify_discord "lock"
 
 echo -e "\n[✓] CICLO COMPLETATO CON SUCCESSO!"
 echo "    - Filesystem smontati."

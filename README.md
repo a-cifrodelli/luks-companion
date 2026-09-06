@@ -102,8 +102,8 @@ flowchart TD
 - 🖼️ **In-Browser Steganography**: Embed and extract 4096-bit keys into/from normal photos directly inside the browser using the Web Crypto API.
 - 📦 **LVM2 + LUKS2 Support**: Handles complex multi-volume LVM setups containing both encrypted and plain partitions.
 - 🌐 **Dedicated Socket Daemon (`daemon/`)**: Provides a non-root UNIX domain socket (`/run/luks-manager.sock`) for seamless Web App integration.
-- 🖥️ **Desktop Web Dashboard (`web/`)**: Clean, responsive UI with real-time status, 3 unlock methods, and safe eject button.
 - 📊 **Live Telemetry & S.M.A.R.T. Health**: Real-time volume capacity progress bars, drive temperature (`°C`), and hardware integrity checks via `smartctl`.
+- 🔔 **Discord Webhook Notifications**: Real-time rich embeds on storage unlock, safe lock/spindown, watchdog inactivity timeout, or system errors (100% zero overhead if disabled).
 - 📁 **Lightweight WebDAV Subsystem**: Native image/video thumbnail support serving the decrypted storage directly.
 
 ---
@@ -195,6 +195,31 @@ sudo ./web/install.sh
 La dashboard HTTP si avvia sulla porta configurata in `.env` (`WEB_PORT=9099`):
 * **Accesso diretto HTTP**: `http://<IP_DEL_SERVER>:9099`
 * **Terminazione TLS / HTTPS**: Se desideri esporla su HTTPS con certificato SSL, configura il tuo reverse proxy preferito (Traefik, Nginx, Caddy, Apache) inoltrando le richieste verso `http://127.0.0.1:9099`. (Vedi [docs/web.md](docs/web.md) per dettagli ed esempi).
+
+---
+
+## 🔔 Notifiche Discord (Webhook)
+
+LUKS Companion supporta l'invio automatico di notifiche con embed ricchi su un canale Discord per tenere traccia dello stato di sicurezza dello storage:
+
+1. **Configurazione in `.env`**:
+   Imposta la variabile `DISCORD_WEBHOOK_URL`:
+   ```bash
+   DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/1234567890/abcdefghijklmnopqrstuvwxyz"
+   ```
+   > [!NOTE]
+   > **Sicurezza & Zero Overhead**: Se `DISCORD_WEBHOOK_URL` è vuota, commentata o non presente nel file `.env`, il modulo di notifica viene saltato istantaneamente (`exit 0`), senza effettuare alcuna chiamata di rete o introdurre ritardi.
+
+2. **Eventi notificati automaticamente**:
+   * 🔓 **Sblocco**: Quando il volume viene decifrato in RAM e montato con successo (con dettagli Host, Volume Group, Mount point, WebDAV).
+   * 🛑 **Arresto / Lock**: Quando i volumi vengono smontati, la chiave cancellata dalla memoria e il disco spento (0W).
+   * ⏱️ **Watchdog per Inattività**: Quando il timer di inattività scade ed espelle lo storage.
+   * ⚠️ **Errori**: In caso di tentativi falliti o anomalie hardware sul bus USB.
+
+3. **Test manuale del Webhook**:
+   ```bash
+   ./scripts/notify-discord.sh test
+   ```
 
 ---
 
