@@ -1,10 +1,10 @@
 # ===================================================================
 # WEBDAV SERVER CONFIGURATION TEMPLATE FOR LUKS MANAGER
-# Placeholders (${WEBDAV_USER}, ${WEBDAV_PASSWORD_HASH}, ${MOUNT_CRYPTO})
+# Placeholders (${WEBDAV_USER}, ${WEBDAV_PASSWORD_HASH}, ${MOUNT_CRYPTO}, ${WEBDAV_PORT})
 # are dynamically populated by scripts/install-webdav.sh from .env
 # ===================================================================
 address: 0.0.0.0
-port: 8443
+port: ${WEBDAV_PORT}
 cert: ""
 key: ""
 auth: true
