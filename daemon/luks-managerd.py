@@ -16,8 +16,16 @@ SOCKET_PATH = "/run/luks-manager.sock"
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_FILE = os.path.join(BASE_DIR, ".env")
 MANAGER_SCRIPT = os.path.join(BASE_DIR, "luks-manager.sh")
+NOTIFY_SCRIPT = os.path.join(BASE_DIR, "scripts", "notify-discord.py")
 
 action_lock = threading.Lock()
+
+def notify_discord(event, message=""):
+    if os.path.exists(NOTIFY_SCRIPT):
+        try:
+            subprocess.Popen([sys.executable, NOTIFY_SCRIPT, event, message], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
 
 def load_env():
     env = {}
@@ -282,7 +290,9 @@ def handle_client(conn):
                     key_payload = req["passphrase"].encode('utf-8')
 
                 if not key_payload:
-                    send_response(conn, {"status": "error", "message": "Nessuna passphrase o keyfile fornito"})
+                    err_msg = "Nessuna passphrase o keyfile fornito"
+                    notify_discord("error", err_msg)
+                    send_response(conn, {"status": "error", "message": err_msg})
                     return
 
                 proc = subprocess.Popen(
@@ -307,9 +317,11 @@ def handle_client(conn):
                         "data": get_status()
                     })
                 else:
+                    err_msg = stderr or stdout or "Errore durante lo sblocco"
+                    notify_discord("error", err_msg)
                     send_response(conn, {
                         "status": "error",
-                        "message": stderr or stdout or "Errore durante lo sblocco",
+                        "message": err_msg,
                         "data": get_status()
                     })
             finally:
@@ -338,9 +350,11 @@ def handle_client(conn):
                         "data": get_status()
                     })
                 else:
+                    err_msg = stderr.strip() or stdout.strip() or "Errore durante l'arresto"
+                    notify_discord("error", err_msg)
                     send_response(conn, {
                         "status": "error",
-                        "message": stderr.strip() or stdout.strip() or "Errore durante l'arresto",
+                        "message": err_msg,
                         "data": get_status()
                     })
             finally:

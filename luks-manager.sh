@@ -264,6 +264,16 @@ get_disk_io_stats() {
     fi
 }
 
+on_script_error() {
+    local exit_code="$1"
+    local line_no="$2"
+    local bash_cmd="$3"
+    cleanup_key
+    echo -e "\n[!] ERRORE FATALE (riga $line_no): Comando '$bash_cmd' fallito con codice $exit_code." >&2
+    notify_discord "error" "Errore imprevisto alla riga $line_no (comando: '$bash_cmd', exit code: $exit_code)"
+}
+trap 'on_script_error $? $LINENO "$BASH_COMMAND"' ERR
+
 notify_discord() {
     local event="$1"
     local msg="${2:-}"
@@ -273,8 +283,8 @@ notify_discord() {
 }
 
 safe_power_off_sequence() {
-    # Ignore signals during teardown to guarantee atomic execution
-    trap '' SIGINT SIGTERM SIGHUP
+    # Ignore signals and disable ERR trap during teardown to guarantee atomic execution
+    trap '' ERR SIGINT SIGTERM SIGHUP
     cleanup_key
 
     if [ "$TEARDOWN_DONE" = true ]; then
