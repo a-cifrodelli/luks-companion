@@ -29,6 +29,7 @@ USB_DETECT_TIMEOUT="${USB_DETECT_TIMEOUT:-40}"
 MAX_PASSPHRASE_TRIES="${MAX_PASSPHRASE_TRIES:-3}"
 SPINDOWN_WAIT_SEC="${SPINDOWN_WAIT_SEC:-3}"
 CUTOFF_GRACE_SEC="${CUTOFF_GRACE_SEC:-5}"
+ENABLE_WEBDAV="${ENABLE_WEBDAV:-true}"
 RELOAD_SAMBA="${RELOAD_SAMBA:-false}"
 TARGET_DEV="${TARGET_DEV:-}"
 LV_BACKUP="${LV_BACKUP:-}"
@@ -91,6 +92,11 @@ detect_target_device() {
 }
 
 safe_power_off_sequence() {
+    echo "  -> Stop del servizio WebDAV..."
+    if [ "$ENABLE_WEBDAV" = "true" ]; then
+        sudo systemctl stop webdav 2>/dev/null || true
+    fi
+
     echo "  -> Flush buffer RAM (sync)..."
     sudo sync
 
@@ -137,7 +143,7 @@ safe_power_off_sequence() {
             sleep "$SPINDOWN_WAIT_SEC"
         fi
     else
-        echo "  [*] Nessun dispositivo fisico agganciato da disconnettere via SCSI."
+        echo "  [*] Nessun dispositivo fisico agganciato da disconnetter via SCSI."
     fi
 
     echo "  -> Pausa di tolleranza pre-cutoff (${CUTOFF_GRACE_SEC}s)..."
@@ -150,7 +156,7 @@ safe_power_off_sequence() {
 # ===================================================================
 # 1. HARDWARE POWER-ON (HOME ASSISTANT)
 # ===================================================================
-echo "[1/7] Invio comando di accensione presa a Home Assistant (${HA_ENTITY_ID})...."
+echo "[1/7] Invio comando di accensione presa a Home Assistant (${HA_ENTITY_ID})..."
 ha_call_service "turn_on"
 
 echo "[*] Attesa conferma stato 'on' da Home Assistant..."
@@ -228,6 +234,12 @@ if [ -n "$LV_BACKUP_PATH" ] && [ -n "$MOUNT_BACKUP" ]; then
     if sudo mount -o noatime,nodev,nosuid "$LV_BACKUP_PATH" "$MOUNT_BACKUP" 2>/dev/null; then
         echo "[✓] Dati Secondo Volume montati su: $MOUNT_BACKUP"
     fi
+fi
+
+if [ "$ENABLE_WEBDAV" = "true" ]; then
+    echo "[*] Avvio del servizio WebDAV..."
+    sudo systemctl start webdav 2>/dev/null || true
+    echo "[✓] Server WebDAV attivo!"
 fi
 
 if [ "$RELOAD_SAMBA" = "true" ]; then
