@@ -74,6 +74,7 @@ RELOAD_SAMBA="${RELOAD_SAMBA:-false}"
 TARGET_DEV="${TARGET_DEV:-}"
 LV_BACKUP="${LV_BACKUP:-}"
 MOUNT_BACKUP="${MOUNT_BACKUP:-}"
+STORAGE_BASE="${STORAGE_BASE:-$(dirname "$MOUNT_CRYPTO")}"
 STORAGE_GROUP="${STORAGE_GROUP:-storage}"
 STORAGE_PERMS="${STORAGE_PERMS:-2775}"
 
@@ -590,6 +591,12 @@ fi
 # 5. MOUNT FILESYSTEMS & REFRESH SERVICES
 # ===================================================================
 echo "[5/7] Montaggio volumi su filesystem..."
+mkdir -p "$STORAGE_BASE"
+if [ -n "${STORAGE_GROUP:-}" ] && getent group "$STORAGE_GROUP" >/dev/null 2>&1; then
+    chgrp "$STORAGE_GROUP" "$STORAGE_BASE" 2>/dev/null || true
+    chmod "${STORAGE_PERMS:-2775}" "$STORAGE_BASE" 2>/dev/null || true
+fi
+
 mkdir -p "$MOUNT_CRYPTO"
 if ! mountpoint -q "$MOUNT_CRYPTO"; then
     mount -o noatime,nodev,nosuid "/dev/mapper/$MAPPER_NAME" "$MOUNT_CRYPTO"
@@ -616,14 +623,14 @@ if [ -n "$LV_BACKUP_PATH" ] && [ -n "$MOUNT_BACKUP" ]; then
 fi
 
 if [ "$ENABLE_WEBDAV" = "true" ]; then
-    echo "[*] Avvio/Riavvio del servizio WebDAV su ${MOUNT_CRYPTO}..."
+    echo "[*] Avvio/Riavvio del servizio WebDAV su ${STORAGE_BASE}..."
     if [ -f "/etc/webdav/config.yaml" ]; then
-        sed -i "s|directory: \".*\"|directory: \"${MOUNT_CRYPTO}\"|g" /etc/webdav/config.yaml 2>/dev/null || true
+        sed -i "s|directory: \".*\"|directory: \"${STORAGE_BASE}\"|g" /etc/webdav/config.yaml 2>/dev/null || true
         sed -i 's|scope: ".*"|scope: "/"|g' /etc/webdav/config.yaml 2>/dev/null || true
     fi
 
     systemctl restart webdav 2>/dev/null || systemctl start webdav 2>/dev/null || echo "[!] WARNING: Impossibile avviare webdav.service" >&2
-    echo "[✓] Server WebDAV attivo su ${MOUNT_CRYPTO}!"
+    echo "[✓] Server WebDAV attivo su ${STORAGE_BASE} (con tutti i volumi montati)!"
 fi
 
 if [ "$RELOAD_SAMBA" = "true" ]; then

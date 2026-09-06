@@ -61,7 +61,7 @@ auth: true
 users:
   - username: "admin"
     password: "{bcrypt}$2a$10$e83B1...YourBcryptHashHere..."
-    directory: "/mnt/crypto_data"
+    directory: "/srv/storage"
     scope: "/"
     modify: true
     rules:
@@ -157,15 +157,16 @@ In your `.env` file, set:
 ```env
 ENABLE_WEBDAV=true
 WEBDAV_PORT=9088
+STORAGE_BASE="/srv/storage"
+MOUNT_CRYPTO="/srv/storage/crypto_data"
+MOUNT_BACKUP="/srv/storage/backup_data" # Optional secondary volume
 STORAGE_GROUP="storage"
 STORAGE_PERMS="2775"
 RELOAD_SAMBA=false
 ```
 
-### Clean Permission Model (No `chmod 777`):
+### Clean Permission & Multi-Volume Model (No `chmod 777`):
 1. The installer automatically creates a shared system group (`storage`) and adds your local user (`$SUDO_USER`) to it.
-2. When `luks-manager.sh` mounts the decrypted filesystem to `/mnt/crypto_data`:
-   - It sets group ownership to `STORAGE_GROUP` (`chgrp storage`).
-   - It applies directory permissions with the **SGID bit** (`chmod 2775`), ensuring all newly created files and folders automatically inherit group write access.
-3. WebDAV serves the decrypted storage directly on `http://<ip>:9088/` with full read and write capabilities.
-4. On teardown, the script cleanly stops `webdav.service` before unmounting the filesystem and initiating physical drive spindown.
+2. The base directory (`/srv/storage`) and all mount points (`/srv/storage/crypto_data`, `/srv/storage/backup_data`) are mounted directly and protected with `STORAGE_GROUP` ownership and the **SGID bit** (`chmod 2775`).
+3. WebDAV serves the unified storage root (`directory: "/srv/storage"`, `scope: "/"`), so both `crypto_data/` and `backup_data/` are immediately accessible and writable from the root URL.
+4. On teardown, the script cleanly stops `webdav.service` before unmounting filesystems and initiating physical drive spindown.
