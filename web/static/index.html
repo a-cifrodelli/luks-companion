@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LUKS Companion — Storage Control Center</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <div class="brand-icon">🔒</div>
+      <div>
+        <h1>LUKS COMPANION</h1>
+        <span>Zero-Standby Enterprise Storage</span>
+      </div>
+    </div>
+
+    <div class="header-status">
+      <div id="masterStatusBadge" class="badge badge-red">
+        <span class="badge-dot"></span>
+        <span id="masterStatusText">IN ATTESA</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <div class="container">
+
+    <!-- Status Grid (Desktop 4-Col) -->
+    <div class="grid-status">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">LVM Volume Group</span>
+          <span>📦</span>
+        </div>
+        <div id="valLvm" class="card-value">...</div>
+        <div class="card-meta">Kernel Module dm-mod</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Cifratura LUKS2</span>
+          <span>🔑</span>
+        </div>
+        <div id="valLuks" class="card-value">...</div>
+        <div class="card-meta">RAM Key Management</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Punto di Mount</span>
+          <span>📁</span>
+        </div>
+        <div id="valMount" class="card-value">...</div>
+        <div class="card-meta">Local Filesystem</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Servizio WebDAV</span>
+          <span>🌐</span>
+        </div>
+        <div id="valWebdav" class="card-value">...</div>
+        <div class="card-meta">Isolated Bind-Mount /srv/webdav</div>
+      </div>
+    </div>
+
+    <!-- Action Area -->
+    <div class="action-panel">
+
+      <!-- Sblocco (Passphrase o Keyfile) -->
+      <div class="auth-box">
+        <div class="tabs">
+          <button id="tabPassphrase" class="tab-btn active" onclick="setTab('passphrase')">Passphrase</button>
+          <button id="tabKeyfile" class="tab-btn" onclick="setTab('keyfile')">File Chiave (Keyfile / Immagine)</button>
+        </div>
+
+        <!-- Tab 1: Passphrase -->
+        <div id="secPassphrase" class="input-group">
+          <label for="inputPassphrase">Inserisci Passphrase LUKS:</label>
+          <input type="password" id="inputPassphrase" class="input-text" placeholder="••••••••••••••••" autocomplete="current-password" />
+        </div>
+
+        <!-- Tab 2: Keyfile Drag & Drop -->
+        <div id="secKeyfile" class="input-group" style="display: none;">
+          <label>Carica o trascina la chiave (.key / .bin / immagine stego):</label>
+          <div id="keyfileDropzone" class="dropzone">
+            <div class="dropzone-icon">📄</div>
+            <div class="dropzone-text">Trascina qui il file chiave oppure <strong>clicca per sfogliare</strong></div>
+            <div id="keyfileSelectedText" class="file-selected" style="display: none;"></div>
+          </div>
+          <input type="file" id="keyfileInput" style="display: none;" />
+        </div>
+
+        <button id="btnUnlock" class="btn btn-primary" onclick="performUnlock()">
+          🔑 Sblocca Storage
+        </button>
+      </div>
+
+      <!-- Quick Control & Safe Eject -->
+      <div class="controls-box">
+        <div class="controls-info">
+          <h3>Arresto & Cutoff 220V</h3>
+          <p>
+            Esegue l'arresto controllato di WebDAV, smonta i filesystem, distrugge la chiave in RAM, disattiva LVM, parcheggia le testine SCSI ed interrompe l'alimentazione smart plug a 0W.
+          </p>
+        </div>
+
+        <button id="btnStop" class="btn btn-danger" onclick="openStopModal()" disabled>
+          🛑 Espelli & Spegni 220V
+        </button>
+      </div>
+
+    </div>
+
+    <!-- Console Output Log -->
+    <div class="console-card">
+      <div class="console-header">Attività & Log Operazioni</div>
+      <div id="consoleOutput" class="console-log"></div>
+    </div>
+
+  </div>
+
+  <!-- Stop Confirmation Modal -->
+  <div id="stopModal" class="modal-overlay">
+    <div class="modal">
+      <h3>Conferma Arresto di Sicurezza</h3>
+      <p>
+        Sei sicuro di voler terminare tutti i processi attivi, smontare i volumi, sigillare il container LUKS e spegnere la presa 220V?
+      </p>
+      <div class="modal-actions">
+        <button class="btn" style="background: #1e293b; color: #fff;" onclick="closeStopModal()">Annulla</button>
+        <button class="btn btn-danger" onclick="confirmStop()">Sì, Procedi con lo Spegnimento</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer>
+    LUKS Companion — Zero-Standby Storage Subsystem Orchestrator &bull; High Security Mode
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

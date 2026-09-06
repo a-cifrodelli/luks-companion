@@ -8,6 +8,7 @@ import json
 import socket
 import subprocess
 import signal
+import base64
 
 SOCKET_PATH = "/run/luks-manager.sock"
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -50,12 +51,11 @@ def send_response(conn, payload):
         data = json.dumps(payload).encode('utf-8')
         conn.sendall(data)
     except (BrokenPipeError, ConnectionResetError, OSError):
-        # Client disconnected or closed socket before reading response
         pass
 
 def handle_client(conn):
     try:
-        data = conn.recv(4096)
+        data = conn.recv(16384)
         if not data:
             return
         
@@ -71,31 +71,49 @@ def handle_client(conn):
             send_response(conn, {"status": "ok", "data": get_status()})
 
         elif action == "unlock":
-            passphrase = req.get("passphrase", "")
-            if not passphrase:
-                send_response(conn, {"status": "error", "message": "Passphrase vuota o mancante"})
+            key_payload = None
+            
+            # 1. Base64 encoded binary keyfile
+            if req.get("keyfile_base64"):
+                try:
+                    key_payload = base64.b64decode(req["keyfile_base64"])
+                except Exception as e:
+                    send_response(conn, {"status": "error", "message": f"Decodifica keyfile base64 fallita: {e}"})
+                    return
+
+            # 2. Plain passphrase string
+            elif req.get("passphrase"):
+                key_payload = req["passphrase"].encode('utf-8') + b"\n"
+
+            if not key_payload:
+                send_response(conn, {"status": "error", "message": "Nessuna passphrase o keyfile fornito"})
                 return
 
             proc = subprocess.Popen(
                 ["/usr/bin/env", "bash", MANAGER_SCRIPT, "unlock", "--no-watchdog"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
+                stderr=subprocess.PIPE
             )
-            stdout, stderr = proc.communicate(input=passphrase + "\n")
+            stdout_bytes, stderr_bytes = proc.communicate(input=key_payload)
+            
+            # Overwrite key in RAM immediately
+            del key_payload
+
+            stdout = stdout_bytes.decode('utf-8', errors='replace').strip()
+            stderr = stderr_bytes.decode('utf-8', errors='replace').strip()
             
             if proc.returncode == 0:
                 send_response(conn, {
                     "status": "ok",
                     "message": "Volume sbloccato e montato con successo",
-                    "output": stdout.strip(),
+                    "output": stdout,
                     "data": get_status()
                 })
             else:
                 send_response(conn, {
                     "status": "error",
-                    "message": stderr.strip() or stdout.strip() or "Errore durante lo sblocco",
+                    "message": stderr or stdout or "Errore durante lo sblocco",
                     "data": get_status()
                 })
 

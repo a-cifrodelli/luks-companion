@@ -73,6 +73,7 @@ fi
 # Parse positional arguments and flags
 COMMAND="start"
 NO_WATCHDOG=false
+CLI_KEYFILE=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -88,17 +89,26 @@ while [[ $# -gt 0 ]]; do
             COMMAND="status"
             shift
             ;;
+        --keyfile)
+            if [ -n "${2:-}" ]; then
+                CLI_KEYFILE="$2"
+                shift 2
+            else
+                echo "[!] ERRORE: Opzione --keyfile richiede un percorso." >&2
+                exit 1
+            fi
+            ;;
         --no-watchdog|--daemon)
             NO_WATCHDOG=true
             shift
             ;;
         -h|--help)
-            echo "Uso: $0 [start|stop|status] [--no-watchdog]"
+            echo "Uso: $0 [start|stop|status] [--keyfile <percorso_chiave>] [--no-watchdog]"
             exit 0
             ;;
         *)
             echo "[!] Argomento sconosciuto: $1" >&2
-            echo "Uso: $0 [start|stop|status] [--no-watchdog]" >&2
+            echo "Uso: $0 [start|stop|status] [--keyfile <percorso_chiave>] [--no-watchdog]" >&2
             exit 1
             ;;
     esac
@@ -458,7 +468,7 @@ vgscan --mknodes >/dev/null 2>&1 || true
 vgchange -ay "$VG_NAME" >/dev/null 2>&1 || vgchange -ay "$VG_NAME"
 
 # ===================================================================
-# 4. LUKS DECRYPTION IN-MEMORY (RAM)
+# 4. LUKS DECRYPTION IN-MEMORY (RAM / STDIN / KEYFILE)
 # ===================================================================
 echo "[4/7] Sblocco volume cifrato LUKS2 in RAM..."
 
@@ -468,8 +478,26 @@ if [ -b "/dev/mapper/${MAPPER_NAME}" ]; then
     VOLUME_IS_UNLOCKED=true
 else
     VOLUME_IS_UNLOCKED=false
-    if [ -t 0 ]; then
-        # Interactive TTY mode
+
+    # Scenario A: Explicit Keyfile provided via CLI flag
+    if [ -n "$CLI_KEYFILE" ]; then
+        if [ ! -f "$CLI_KEYFILE" ]; then
+            echo "[!] ERRORE: File chiave specificato '$CLI_KEYFILE' non trovato!" >&2
+            safe_power_off_sequence
+            exit 1
+        fi
+        echo "[*] Sblocco con file chiave: $CLI_KEYFILE..."
+        if cryptsetup open "$LV_CRYPTO_PATH" "$MAPPER_NAME" --key-file "$CLI_KEYFILE" >/dev/null 2>&1; then
+            VOLUME_IS_UNLOCKED=true
+            echo "[✓] Volume sbloccato con successo tramite keyfile!"
+        else
+            echo "[!] ERRORE: Chiave non valida per '$LV_CRYPTO_PATH'." >&2
+            safe_power_off_sequence
+            exit 1
+        fi
+
+    # Scenario B: Interactive TTY Passphrase prompt
+    elif [ -t 0 ]; then
         for try in $(seq 1 "$MAX_PASSPHRASE_TRIES"); do
             echo -n -e "\n[*] Inserisci la Passphrase LUKS per '$LV_CRYPTO_PATH' (tentativo $try di $MAX_PASSPHRASE_TRIES): "
             read -rs PASSPHRASE
@@ -490,22 +518,14 @@ else
                 echo "[!] ERRORE: Passphrase LUKS errata." >&2
             fi
         done
-    else
-        # Non-interactive mode (e.g. piped from socket daemon)
-        read -r PASSPHRASE || true
-        if [ -z "$PASSPHRASE" ]; then
-            echo "[!] ERRORE: Nessuna passphrase ricevuta da stdin." >&2
-            safe_power_off_sequence
-            exit 1
-        fi
 
-        if printf '%s' "$PASSPHRASE" | cryptsetup open "$LV_CRYPTO_PATH" "$MAPPER_NAME" --key-file - >/dev/null 2>&1; then
+    # Scenario C: Non-interactive piped input (passphrase or raw binary key stream directly to cryptsetup)
+    else
+        if cryptsetup open "$LV_CRYPTO_PATH" "$MAPPER_NAME" --key-file - >/dev/null 2>&1; then
             VOLUME_IS_UNLOCKED=true
-            PASSPHRASE=""
-            echo "[✓] Volume sbloccato con successo in /dev/mapper/$MAPPER_NAME"
+            echo "[✓] Volume sbloccato con successo da stdin in /dev/mapper/$MAPPER_NAME"
         else
-            PASSPHRASE=""
-            echo "[!] ERRORE: Passphrase LUKS errata." >&2
+            echo "[!] ERRORE: Chiave/Passphrase da stdin non valida o errata." >&2
             safe_power_off_sequence
             exit 1
         fi

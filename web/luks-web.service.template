@@ -1,0 +1,20 @@
+# ===================================================================
+# LUKS-MANAGER WEB APP SYSTEMD SERVICE TEMPLATE
+# Placeholders (${REPO_DIR}) are dynamically populated by web/install.sh
+# ===================================================================
+[Unit]
+Description=LUKS Manager Web Dashboard Gateway
+After=network.target luks-managerd.service
+Wants=luks-managerd.service
+
+[Service]
+Type=simple
+WorkingDirectory=${REPO_DIR}
+ExecStart=/usr/bin/python3 ${REPO_DIR}/web/server.py
+Restart=always
+RestartSec=3
+Environment=LUKS_WEB_PORT=9099
+Environment=LUKS_WEB_HOST=0.0.0.0
+
+[Install]
+WantedBy=multi-user.target
