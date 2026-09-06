@@ -1,4 +1,4 @@
-# LUKS Manager 🔒⚡
+# LUKS Companion 🔒⚡
 
 [![Bash Shell](https://img.shields.io/badge/Shell-Bash-4EAA25.svg?logo=gnu-bash&logoColor=white)](https://www.gnu.org/software/bash/)
 [![Linux Compatible](https://img.shields.io/badge/Linux-Kernel_6.x-FCC624.svg?logo=linux&logoColor=black)](https://kernel.org/)
@@ -9,7 +9,7 @@
 
 An on-demand, zero-standby-power LUKS2 & LVM storage subsystem orchestrator designed for 24/7 headless Linux servers (such as Raspberry Pi 5).
 
-It combines **Home Assistant REST API smart plug control**, **LVM Volume Group activation**, **RAM-only LUKS2 passphrase decryption (`stdin`)**, **lightweight WebDAV sharing**, and **clean SCSI spindown (`udisksctl power-off`)** to achieve true **0 Watt cold storage standby** with safe physical head parking.
+It combines **Home Assistant REST API smart plug control**, **LVM Volume Group activation**, **RAM-only LUKS2 passphrase & keyfile decryption (`stdin`)**, **lightweight WebDAV sharing**, and **clean SCSI spindown (`udisksctl power-off`)** to achieve true **0 Watt cold storage standby** with safe physical head parking.
 
 ---
 
@@ -17,61 +17,66 @@ It combines **Home Assistant REST API smart plug control**, **LVM Volume Group a
 
 ```mermaid
 flowchart TD
-    subgraph CLIENTS ["💻 Client Tier (Web App, CLI, WebDAV)"]
-        CLI["Interactive CLI<br/><code>./luks-manager.sh</code>"]
-        WebApp["Web App / API Client<br/><i>JSON over UNIX Socket</i>"]
+    subgraph CLIENTS ["Clients & Frontends"]
+        CLI["CLI: ./luks-manager.sh"]
+        WebUI["Desktop Web Dashboard (web/)"]
+        WebDAVClient["WebDAV Clients (Windows / macOS / Linux)"]
     end
 
-    subgraph DAEMON ["⚙️ Daemon Subsystem (daemon/)"]
-        SockDaemon["<b>luks-managerd</b><br/><code>/run/luks-manager.sock</code>"]
+    subgraph DAEMON ["IPC Socket Layer"]
+        SocketDaemon["luks-managerd (/run/luks-manager.sock)"]
     end
 
-    subgraph RPI ["🌐 Host System (Arch Linux ARM / Raspberry Pi 5)"]
-        Orchestrator["<b>LUKS Manager Core</b><br/><code>luks-manager.sh [start|stop|status]</code>"]
+    subgraph HOST ["Raspberry Pi 5 Server"]
+        Orchestrator["Core Orchestrator (luks-manager.sh)"]
         
-        subgraph SEC ["🔒 Security & RAM Layer"]
-            LVM["<b>LVM2 Kernel Module</b><br/><code>vgchange -ay</code>"]
-            LUKS["<b>LUKS2 / dm-crypt</b><br/><i>Argon2id Decryption via Stdin</i>"]
-            Mounts["<b>Mounted Filesystems</b><br/><code>/mnt/crypto_data</code> & <code>/mnt/backup_data</code>"]
-            WebDAV["<b>WebDAV Server</b><br/><code>/srv/webdav</code> <i>(Isolated Bind-Mount)</i>"]
+        subgraph SEC ["Security & Storage Layer"]
+            LVM["LVM2 Module (vgchange -ay)"]
+            LUKS["LUKS2 / dm-crypt (Argon2id in RAM)"]
+            Mounts["Mounted Volumes (/mnt/crypto_data)"]
+            WebDAV["Isolated WebDAV Server (/srv/webdav)"]
         end
         
-        subgraph TEARDOWN ["⚡ Teardown & Active Verification"]
-            Sync["<b>RAM Flush & Unmount</b><br/><code>sync -> umount -l</code>"]
-            Purge["<b>Key Erasure & LVM Deactivate</b><br/><code>cryptsetup close -> vgchange -an</code>"]
-            Spindown["<b>SCSI Spindown & Ramp Park</b><br/><code>udisksctl power-off</code>"]
-            Verify["<b>Active Kernel Un-enumeration Check</b><br/><code>[ ! -b /dev/sdX ] && [ ! -d /sys/block/sdX ]</code>"]
+        subgraph TEARDOWN ["Safe Teardown Routine"]
+            Sync["RAM Flush & Unmount (sync, umount)"]
+            Purge["Key Purge & LVM Close (cryptsetup close)"]
+            Spindown["SCSI Spindown (udisksctl power-off)"]
+            Verify["Kernel Bus Un-enumeration Check"]
         end
     end
 
-    subgraph EXTERNAL ["🔌 Hardware & Home Assistant Infrastructure"]
-        HA["<b>Home Assistant REST API</b><br/><code>https://homeassistant.local:8123</code>"]
-        Tapo["<b>Smart Plug (Tapo P105)</b><br/><i>220V Relays</i>"]
-        Drive[("<b>WD My Book 3.5 Drive</b><br/><i>SCSI / SES Bridge</i>")]
+    subgraph HARDWARE ["Hardware & Power Infrastructure"]
+        HA["Home Assistant REST API"]
+        Plug["Smart Plug (Tapo 220V Relays)"]
+        Drive["External USB/SCSI Storage"]
     end
 
-    %% Flow Relationships
+    %% Client Connections
     CLI --> Orchestrator
-    WebApp --> SockDaemon
-    SockDaemon --> Orchestrator
+    WebUI --> SocketDaemon
+    SocketDaemon --> Orchestrator
+    WebDAVClient --> WebDAV
 
-    Orchestrator -->|1. POST /turn_on| HA
-    HA -->|Power ON| Tapo
-    Tapo -.->|220V Feed| Drive
-    Drive -.->|2. USB Kernel Enumeration| Orchestrator
-    
+    %% Power-On Flow
+    Orchestrator -->|1. Turn ON| HA
+    HA -->|Power ON| Plug
+    Plug -.->|220V Power| Drive
+    Drive -.->|2. USB Bus Enumeration| Orchestrator
+
+    %% Unlock Flow
     Orchestrator -->|3. Activate VG| LVM
     LVM -->|4. Decrypt via stdin| LUKS
-    LUKS -->|5. Mount| Mounts
+    LUKS -->|5. Mount Filesystems| Mounts
     Mounts -->|6. Bind-Mount & Start| WebDAV
-    
-    Orchestrator -->|7. Teardown Trigger (stop)| Sync
+
+    %% Teardown Flow
+    Orchestrator -->|7. Stop / Teardown| Sync
     Sync --> Purge
     Purge --> Spindown
     Spindown --> Verify
-    Verify -->|8. SCSI STOP UNIT Confirmed| Drive
-    Verify -->|9. Verified Disconnect -> POST /turn_off| HA
-    HA -->|0W Standby Cutoff| Tapo
+    Verify -->|8. SCSI STOP Confirmed| Drive
+    Verify -->|9. Disconnect Confirmed -> Turn OFF| HA
+    HA -->|0W Standby Cutoff| Plug
 ```
 
 > [!IMPORTANT]
@@ -83,11 +88,12 @@ flowchart TD
 
 - 🔋 **0 Watt Standby Consumption**: Cuts 220V power via Home Assistant smart plug automation when not in use.
 - 🛡️ **Hardware Preservation**: Uses SCSI `START STOP UNIT` (`udisksctl power-off`) and active kernel un-enumeration polling to safely park heads on landing ramps before 220V power cut.
-- 🔑 **Strict RAM Hygiene**: Passphrase is read via `stdin` (`--key-file -`) directly into kernel memory (`dm-crypt`). Never written to disk, CLI args, or shell history.
+- 🔑 **Strict RAM Hygiene**: Passphrases and keyfiles are read via `stdin` (`--key-file -`) directly into kernel memory (`dm-crypt`). Never written to disk, CLI args, or shell history.
+- 🖼️ **In-Browser Steganography**: Embed and extract 4096-bit keys into/from normal photos directly inside the browser using the Web Crypto API.
 - 📦 **LVM2 + LUKS2 Support**: Handles complex multi-volume LVM setups containing both encrypted and plain partitions.
 - 🌐 **Dedicated Socket Daemon (`daemon/`)**: Provides a non-root UNIX domain socket (`/run/luks-manager.sock`) for seamless Web App integration.
+- 🖥️ **Desktop Web Dashboard (`web/`)**: Clean, responsive UI with real-time status, 3 unlock methods, and safe eject button.
 - 📁 **Lightweight WebDAV Subsystem**: Native image/video thumbnail support with isolated bind-mount directory scoping (`/srv/webdav`).
-- ⚙️ **Fully Atomic Subcommands**: Standalone `start` (with watchdog), `stop` (immediate safe teardown), and `status`.
 
 ---
 
@@ -125,7 +131,7 @@ sudo apt update && sudo apt install -y cryptsetup lvm2 udisks2 psmisc curl socat
 
 3. **Make scripts executable**:
    ```bash
-   chmod +x luks-manager.sh test_ha_tapo.sh daemon/install.sh scripts/install-webdav.sh
+   chmod +x luks-manager.sh test_ha_tapo.sh daemon/install.sh web/install.sh scripts/install-webdav.sh
    ```
 
 ---
@@ -156,29 +162,18 @@ Inspects live power, LVM, LUKS, mount, and WebDAV state:
 
 ---
 
-## 🌐 Socket Daemon (`daemon/`)
+## 🌐 Socket Daemon & Web Dashboard
 
-To allow unprivileged local Web Apps to query status, unlock, or lock storage without needing `sudo` or SSH, install the background socket daemon:
-
+### 1. Avvio del Demone Socket (Root IPC)
 ```bash
 sudo ./daemon/install.sh
 ```
 
-### Testing the Socket API
-The socket listens at `/run/luks-manager.sock` (`chmod 0666`):
-
-- **Query Status**:
-  ```bash
-  echo '{"action": "status"}' | socat - UNIX-CONNECT:/run/luks-manager.sock
-  ```
-- **Unlock Volume**:
-  ```bash
-  echo '{"action": "unlock", "passphrase": "your_passphrase"}' | socat - UNIX-CONNECT:/run/luks-manager.sock
-  ```
-- **Stop / Safe Teardown**:
-  ```bash
-  echo '{"action": "stop"}' | socat - UNIX-CONNECT:/run/luks-manager.sock
-  ```
+### 2. Avvio della Web Dashboard (Porta 9099)
+```bash
+sudo ./web/install.sh
+```
+Accessibile su `http://<RPI_IP>:9099` o configurabile dietro reverse proxy Traefik (es. `https://storage.rpi.lan`).
 
 ---
 
