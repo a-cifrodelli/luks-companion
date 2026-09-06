@@ -8,10 +8,12 @@ port: ${WEBDAV_PORT}
 cert: ""
 key: ""
 auth: true
+directory: "${WEBDAV_SCOPE}"
 scope: "${WEBDAV_SCOPE}"
 
 users:
   - username: "${WEBDAV_USER}"
     password: "${WEBDAV_PASSWORD_HASH}"
+    directory: "${WEBDAV_SCOPE}"
     scope: "${WEBDAV_SCOPE}"
     modify: true

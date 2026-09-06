@@ -415,6 +415,7 @@ if [ "$ENABLE_WEBDAV" = "true" ]; then
     fi
 
     if [ -f "/etc/webdav/config.yaml" ]; then
+        sed -i "s|directory: \".*\"|directory: \"${WEBDAV_SHARE_DIR}\"|g" /etc/webdav/config.yaml 2>/dev/null || true
         sed -i "s|scope: \".*\"|scope: \"${WEBDAV_SHARE_DIR}\"|g" /etc/webdav/config.yaml 2>/dev/null || true
     fi
 
