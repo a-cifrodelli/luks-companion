@@ -43,6 +43,7 @@ def get_status():
     is_unlocked = os.path.exists(f"/dev/mapper/{mapper_name}") if mapper_name else False
     is_mounted = os.path.ismount(mount_crypto) if mount_crypto else False
     webdav_active = subprocess.call(["systemctl", "is-active", "--quiet", "webdav"]) == 0
+    webdav_port = env.get("WEBDAV_PORT", "")
 
     return {
         "status": "mounted" if is_mounted else ("unlocked" if is_unlocked else "stopped"),
@@ -50,6 +51,7 @@ def get_status():
         "mounted": is_mounted,
         "vg_active": vg_active,
         "webdav_active": webdav_active,
+        "webdav_port": webdav_port,
         "vg_name": vg_name,
         "mapper_name": mapper_name,
         "mount_crypto": mount_crypto

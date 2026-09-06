@@ -97,7 +97,9 @@ async function updateStatus() {
             document.getElementById("valLvm").textContent = data.vg_active ? `Attivo (${data.vg_name})` : "Disattivato";
             document.getElementById("valLuks").textContent = data.unlocked ? `Sbloccato (/dev/mapper/${data.mapper_name || '...' })` : "Sigillato (0 byte in RAM)";
             document.getElementById("valMount").textContent = data.mounted ? (data.mount_crypto || "Montato") : "Non montato";
-            document.getElementById("valWebdav").textContent = data.webdav_active ? "Attivo (Porta 9443)" : "Inattivo";
+            
+            const webdavPortStr = data.webdav_port ? ` (Porta ${data.webdav_port})` : "";
+            document.getElementById("valWebdav").textContent = data.webdav_active ? `Attivo${webdavPortStr}` : "Inattivo";
 
             // Enable/Disable Action Buttons based on state
             const unlockBtn = document.getElementById("btnUnlock");

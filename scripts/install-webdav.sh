@@ -31,7 +31,7 @@ if [ -z "${MOUNT_CRYPTO:-}" ]; then
     exit 1
 fi
 
-WEBDAV_PORT="${WEBDAV_PORT:-9443}"
+WEBDAV_PORT="${WEBDAV_PORT:-9088}"
 
 # Persistent WebDAV scope directory (never falls back to root /)
 WEBDAV_SCOPE="/srv/webdav"

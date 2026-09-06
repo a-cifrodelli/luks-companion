@@ -53,7 +53,7 @@ When running `./scripts/install-webdav.sh`, the installer automatically reads yo
 # WEBDAV SERVER CONFIGURATION FOR LUKS MANAGER
 # ===================================================================
 address: 0.0.0.0
-port: 9443
+port: 9088
 cert: "" # Optional: Path to TLS certificate (/etc/ssl/certs/server.crt)
 key: ""  # Optional: Path to TLS private key (/etc/ssl/certs/server.key)
 auth: true
@@ -102,7 +102,7 @@ sudo systemctl daemon-reload
 1. Open **File Explorer** $\rightarrow$ **This PC**.
 2. Click **Map Network Drive**.
 3. Choose drive letter (e.g. `Z:`).
-4. Enter Folder URL: `https://webdav.your-domain.lan` or `http://your-rpi-ip:9443`.
+4. Enter Folder URL: `https://webdav.your-domain.lan` or `http://your-rpi-ip:9088`.
 5. Enter credentials when prompted. Photo thumbnails will render automatically in Extra Large Icons mode.
 
 ---
@@ -139,12 +139,12 @@ Restart-Service WebClient
 
 ### 🍎 macOS (Finder)
 1. Open **Finder** $\rightarrow$ Press `Cmd + K` (Connect to Server).
-2. Enter Server Address: `https://your-rpi-ip:9443`.
+2. Enter Server Address: `https://your-rpi-ip:9088` (or your Traefik URL `https://webdav.your-domain.lan`).
 3. Click **Connect** and enter your username/password.
 
 ### 🐧 Linux (Nautilus / Dolphin)
 1. Open File Manager $\rightarrow$ **Other Locations** $\rightarrow$ **Connect to Server**.
-2. Address: `davs://your-rpi-ip:9443` (or `dav://...` if HTTP).
+2. Address: `davs://your-rpi-ip:9088` (or `dav://...` if HTTP).
 
 ---
 
