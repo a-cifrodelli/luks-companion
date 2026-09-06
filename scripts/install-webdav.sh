@@ -14,7 +14,7 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Load .env to get MOUNT_CRYPTO and WEBDAV_PORT
+# Load .env to get MOUNT_CRYPTO, WEBDAV_SUBFOLDER, and WEBDAV_PORT
 if [ -f "$ENV_FILE" ]; then
     set -o allexport
     # shellcheck disable=SC1090
@@ -24,11 +24,20 @@ else
     echo "[!] AVVISO: File .env non trovato in ${ENV_FILE}."
     echo "    Impostazione di fallback per MOUNT_CRYPTO=/mnt/encrypted_vault e WEBDAV_PORT=9443"
     MOUNT_CRYPTO="/mnt/encrypted_vault"
+    WEBDAV_SUBFOLDER=""
     WEBDAV_PORT="9443"
 fi
 
 MOUNT_CRYPTO="${MOUNT_CRYPTO:-/mnt/encrypted_vault}"
+WEBDAV_SUBFOLDER="${WEBDAV_SUBFOLDER:-}"
 WEBDAV_PORT="${WEBDAV_PORT:-9443}"
+
+# Calculate full WebDAV Scope path
+if [ -n "$WEBDAV_SUBFOLDER" ]; then
+    WEBDAV_SCOPE="${MOUNT_CRYPTO}/${WEBDAV_SUBFOLDER}"
+else
+    WEBDAV_SCOPE="${MOUNT_CRYPTO}"
+fi
 
 if [ ! -f "$YAML_TEMPLATE_FILE" ]; then
     echo "[!] ERRORE: Template YAML non trovato in ${YAML_TEMPLATE_FILE}" >&2
@@ -74,11 +83,11 @@ except ImportError:
 " "$WEBDAV_PASS" 2>/dev/null || echo "$WEBDAV_PASS")
 
 # 3. POPULATE CONFIG FILE FROM TEMPLATE
-echo "[3/4] Generazione /etc/webdav/config.yaml dal template (Porta: ${WEBDAV_PORT}, Scope: ${MOUNT_CRYPTO})..."
+echo "[3/4] Generazione /etc/webdav/config.yaml dal template (Scope: ${WEBDAV_SCOPE})..."
 mkdir -p /etc/webdav
 
-export WEBDAV_USER WEBDAV_PASSWORD_HASH MOUNT_CRYPTO WEBDAV_PORT
-envsubst '$WEBDAV_USER $WEBDAV_PASSWORD_HASH $MOUNT_CRYPTO $WEBDAV_PORT' < "$YAML_TEMPLATE_FILE" > /etc/webdav/config.yaml
+export WEBDAV_USER WEBDAV_PASSWORD_HASH WEBDAV_SCOPE WEBDAV_PORT
+envsubst '$WEBDAV_USER $WEBDAV_PASSWORD_HASH $WEBDAV_SCOPE $WEBDAV_PORT' < "$YAML_TEMPLATE_FILE" > /etc/webdav/config.yaml
 
 chmod 600 /etc/webdav/config.yaml
 echo "[✓] Configurazione applicata in /etc/webdav/config.yaml"
@@ -91,5 +100,5 @@ systemctl daemon-reload
 echo "[✓] Servizio systemd registrato con successo!"
 
 echo -e "\n=== INSTALLAZIONE COMPLETATA CON SUCCESSO! ==="
-echo "Il server WebDAV è pronto sulla porta ${WEBDAV_PORT} con ambito '${MOUNT_CRYPTO}'."
+echo "Il server WebDAV è pronto sulla porta ${WEBDAV_PORT} con ambito limitato a '${WEBDAV_SCOPE}'."
 echo "Verrà avviato automaticamente da luks-manager.sh quando il disco viene montato."
