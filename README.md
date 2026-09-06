@@ -27,24 +27,28 @@ It combines **Home Assistant REST API smart plug control**, **LVM Volume Group a
 
 ```mermaid
 flowchart TD
-    subgraph CLIENTS ["Clients & Frontends"]
+    subgraph CLIENTS ["Clients, Channels & Frontends"]
         CLI["CLI: ./luks-manager.sh"]
-        WebUI["Desktop Web Dashboard (web/)"]
+        WebUI["Desktop Web Dashboard (web/static)"]
         WebDAVClient["WebDAV Clients (Windows / macOS / Linux)"]
+        Discord["Discord Channel (Webhook Embeds)"]
     end
 
-    subgraph DAEMON ["IPC Socket Layer"]
+    subgraph DAEMON ["IPC & Telemetry Layer"]
+        WebGateway["Web Server (web/server.py :9099)"]
         SocketDaemon["luks-managerd (/run/luks-manager.sock)"]
+        Telemetry["S.M.A.R.T. & statvfs Engine (smartctl)"]
     end
 
     subgraph HOST ["Raspberry Pi 5 Server"]
         Orchestrator["Core Orchestrator (luks-manager.sh)"]
+        Notifier["Discord Dispatcher (notify-discord.py)"]
         
         subgraph SEC ["Security & Storage Layer"]
             LVM["LVM2 Module (vgchange -ay)"]
             LUKS["LUKS2 / dm-crypt (Argon2id in RAM)"]
-            Mounts["Mounted Volumes (/mnt/crypto_data)"]
-            WebDAV["WebDAV Server (/mnt/crypto_data)"]
+            Mounts["Unified Storage Base (/srv/storage/crypto_data)"]
+            WebDAV["WebDAV Server (:9088 CRUD)"]
         end
         
         subgraph TEARDOWN ["Safe Teardown Routine"]
@@ -63,9 +67,14 @@ flowchart TD
 
     %% Client Connections
     CLI --> Orchestrator
-    WebUI --> SocketDaemon
+    WebUI --> WebGateway
+    WebGateway --> SocketDaemon
     SocketDaemon --> Orchestrator
+    SocketDaemon <--> Telemetry
+    Telemetry -.->|Poll Health & Temp| Drive
     WebDAVClient --> WebDAV
+    Orchestrator -.->|Event Triggers| Notifier
+    Notifier -->|Rich Embeds| Discord
 
     %% Power-On Flow
     Orchestrator -->|1. Turn ON| HA
