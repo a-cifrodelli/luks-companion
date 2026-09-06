@@ -63,53 +63,51 @@ cat vault.key | sudo ./luks-manager.sh unlock
 
 ---
 
-## 🖼️ Steganographic Keyfile Embedding
+## 🖼️ Steganographic Keyfile Embedding (Zero-AUR / Built-in Tool)
 
-To protect your keyfile from plain filesystem discovery on your client device, you can hide the 512-byte keyfile **inside a normal image** (e.g., photo, wallpaper, album art).
+To avoid compiling tools from AUR or installing heavy external dependencies, the repository includes a standalone Python steganography utility: **`scripts/stego.py`**.
 
----
-
-### Method A: Steghide (JPEG / BMP)
-`steghide` embeds encrypted data within the transform coefficients of JPEG images without noticeable visual degradation.
-
-#### 1. Install `steghide` (on client)
-* **Arch Linux**: `sudo pacman -S steghide`
-* **Debian / Ubuntu**: `sudo apt install steghide`
-* **macOS (Homebrew)**: `brew install steghide`
-
-#### 2. Embed Keyfile into an Image
-```bash
-# Embeds vault.key into cover_photo.jpg (prompts for an optional stego passphrase)
-steghide embed -cf cover_photo.jpg -ef vault.key -sf holiday_photo.jpg
-```
-
-#### 3. Extract Keyfile from Image on Demand
-```bash
-# Extract the hidden vault.key from holiday_photo.jpg
-steghide extract -sf holiday_photo.jpg
-```
-
-#### 4. Direct Unlock One-Liner (Zero-Disk Extraction)
-```bash
-# Extracts key strictly to stdout pipe into luks-manager
-steghide extract -sf holiday_photo.jpg -p "stego_passphrase" -xf - | ./luks-manager.sh unlock
-```
+It works natively using only the standard Python library on **Arch Linux ARM**, **Ubuntu/Debian**, **macOS**, and **Windows**.
 
 ---
 
-### Method B: Native PNG/JPEG Appending (Pure Linux/macOS/Windows)
-Because image viewers parse headers from the beginning and stop at the image EOF marker, appending data to the end of an image does not corrupt image display in image viewers:
+### 1. Embed Keyfile into Any Image (PNG, JPG, WebP)
+Embeds `vault.key` into `photo.jpg`, optionally protected with a secondary PBKDF2-HMAC-SHA256 passphrase:
 
-#### 1. Hide Key at End of Image
 ```bash
-# Concatenate image + marker + keyfile
-cat wallpaper.jpg vault.key > vacation_photo.jpg
+# Semplice:
+python3 scripts/stego.py embed -c photo.jpg -k vault.key -o secret_photo.jpg
+
+# Con ulteriore cifratura a passphrase:
+python3 scripts/stego.py embed -c photo.jpg -k vault.key -o secret_photo.jpg -p "tua_password_segreta"
+```
+*L'immagine `secret_photo.jpg` appare e si apre normalmente in qualsiasi visualizzatore di immagini (anteprima, galleria, browser).*
+
+---
+
+### 2. Extract Keyfile from Image
+
+#### Option A: Direct Unlock One-Liner via RAM Pipe (Zero Disk Trace)
+Estrae la chiave direttamente nei byte di input di `luks-manager.sh` senza mai salvare il file `.key` su disco:
+
+```bash
+python3 scripts/stego.py extract -i secret_photo.jpg -p "tua_password_segreta" | sudo ./luks-manager.sh unlock
 ```
 
-#### 2. Extract Last 512 Bytes Directly to LUKS Unlock
+#### Option B: Extract to a Local File
 ```bash
-# Reads the exact last 512 bytes and pipes directly to luks-manager
-tail -c 512 vacation_photo.jpg | ./luks-manager.sh unlock
+python3 scripts/stego.py extract -i secret_photo.jpg -p "tua_password_segreta" -o vault.key
+```
+
+---
+
+### 3. Alternative: Native Append Method (No tools required)
+```bash
+# Embedding via cat:
+cat wallpaper.jpg vault.key > secret_wallpaper.jpg
+
+# Extraction via tail:
+tail -c 512 secret_wallpaper.jpg | sudo ./luks-manager.sh unlock
 ```
 
 ---
