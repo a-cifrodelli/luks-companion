@@ -14,30 +14,27 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Load .env to get MOUNT_CRYPTO, WEBDAV_SUBFOLDER, and WEBDAV_PORT
+# Load .env file (mandatory)
 if [ -f "$ENV_FILE" ]; then
     set -o allexport
     # shellcheck disable=SC1090
     source "$ENV_FILE"
     set +o allexport
 else
-    echo "[!] AVVISO: File .env non trovato in ${ENV_FILE}."
-    echo "    Impostazione di fallback per MOUNT_CRYPTO=/mnt/encrypted_vault e WEBDAV_PORT=9443"
-    MOUNT_CRYPTO="/mnt/encrypted_vault"
-    WEBDAV_SUBFOLDER=""
-    WEBDAV_PORT="9443"
+    echo "[!] ERRORE: File di configurazione .env non trovato in ${ENV_FILE}" >&2
+    echo "    Copia .env.example in .env e definisci MOUNT_CRYPTO prima di installare." >&2
+    exit 1
 fi
 
-MOUNT_CRYPTO="${MOUNT_CRYPTO:-/mnt/encrypted_vault}"
-WEBDAV_SUBFOLDER="${WEBDAV_SUBFOLDER:-}"
+if [ -z "${MOUNT_CRYPTO:-}" ]; then
+    echo "[!] ERRORE: La variabile MOUNT_CRYPTO non è definita nel file .env!" >&2
+    exit 1
+fi
+
 WEBDAV_PORT="${WEBDAV_PORT:-9443}"
 
-# Calculate full WebDAV Scope path
-if [ -n "$WEBDAV_SUBFOLDER" ]; then
-    WEBDAV_SCOPE="${MOUNT_CRYPTO}/${WEBDAV_SUBFOLDER}"
-else
-    WEBDAV_SCOPE="${MOUNT_CRYPTO}"
-fi
+# Dynamically derive WebDAV scope as the parent directory of the configured mount point
+WEBDAV_SCOPE="$(dirname "${MOUNT_CRYPTO}")"
 
 if [ ! -f "$YAML_TEMPLATE_FILE" ]; then
     echo "[!] ERRORE: Template YAML non trovato in ${YAML_TEMPLATE_FILE}" >&2
@@ -100,5 +97,5 @@ systemctl daemon-reload
 echo "[✓] Servizio systemd registrato con successo!"
 
 echo -e "\n=== INSTALLAZIONE COMPLETATA CON SUCCESSO! ==="
-echo "Il server WebDAV è pronto sulla porta ${WEBDAV_PORT} con ambito limitato a '${WEBDAV_SCOPE}'."
+echo "Il server WebDAV è pronto sulla porta ${WEBDAV_PORT} esponendo l'ambito '${WEBDAV_SCOPE}'."
 echo "Verrà avviato automaticamente da luks-manager.sh quando il disco viene montato."
