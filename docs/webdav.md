@@ -46,7 +46,7 @@ webdav -h
 
 The repository includes a clean configuration template in `config/webdav.yaml.template`.
 
-When running `./scripts/install-webdav.sh`, the installer automatically reads `MOUNT_CRYPTO` from your `.env` file and populates `/etc/webdav/config.yaml`:
+When running `./scripts/install-webdav.sh`, the installer automatically reads your configured mount points from `.env` and populates `/etc/webdav/config.yaml`:
 
 ```yaml
 # ===================================================================
@@ -57,12 +57,14 @@ port: 9443
 cert: "" # Optional: Path to TLS certificate (/etc/ssl/certs/server.crt)
 key: ""  # Optional: Path to TLS private key (/etc/ssl/certs/server.key)
 auth: true
+directory: "/srv/webdav"
+scope: "/srv/webdav"
 
 users:
   - username: "admin"
-    # Generate bcrypt hash via: python3 -c 'import bcrypt; print(bcrypt.hashpw(b"your_password", bcrypt.gensalt()).decode())'
-    password: "$2a$10$e83B1...YourBcryptHashHere..."
-    scope: "/mnt/crypto_data"
+    password: "{bcrypt}$2a$10$e83B1...YourBcryptHashHere..."
+    directory: "/srv/webdav"
+    scope: "/srv/webdav"
     modify: true
 ```
 
@@ -72,7 +74,6 @@ users:
 
 The systemd unit definition resides in `config/webdav.service.template`. The installer copies it to `/etc/systemd/system/webdav.service`:
 
-
 ```ini
 [Unit]
 Description=WebDAV Server Daemon for LUKS Manager
@@ -80,7 +81,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/webdav --config /etc/webdav/config.yaml
+ExecStart=/usr/local/bin/webdav -c /etc/webdav/config.yaml
 Restart=on-failure
 RestartSec=3
 
@@ -101,8 +102,40 @@ sudo systemctl daemon-reload
 1. Open **File Explorer** $\rightarrow$ **This PC**.
 2. Click **Map Network Drive**.
 3. Choose drive letter (e.g. `Z:`).
-4. Enter Folder URL: `https://your-rpi-ip:9443` or `http://your-rpi-ip:9443`.
+4. Enter Folder URL: `https://webdav.your-domain.lan` or `http://your-rpi-ip:9443`.
 5. Enter credentials when prompted. Photo thumbnails will render automatically in Extra Large Icons mode.
+
+---
+
+## ⚠️ Critical Fix: Windows WebDAV 50MB File Size Limit
+
+By default, the Windows **WebClient** native service enforces an arbitrary maximum download/copy limit of **50 MB** (52,428,800 bytes). If you attempt to copy or open a file larger than 50MB over a mapped WebDAV drive on Windows, Windows Explorer will fail with error `0x800700DF`: *"The file size exceeds the limit allowed and cannot be saved."*
+
+### How to Increase the Limit to 4GB (Maximum Allowed by Windows):
+
+#### Option 1: Automated PowerShell Command (Run as Administrator)
+Open **PowerShell** as Administrator on your Windows machine and execute:
+
+```powershell
+Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\WebClient\Parameters" -Name "FileSizeLimitInBytes" -Value 4294967295 -Type DWord
+Restart-Service WebClient
+```
+
+#### Option 2: Manual Registry Edit (`regedit.exe`)
+1. Press `Win + R`, type `regedit`, and press **Enter**.
+2. Navigate to:
+   `HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\WebClient\Parameters`
+3. Double-click **`FileSizeLimitInBytes`**.
+4. Change **Base** to **Decimal**.
+5. Change value from `52428800` (50MB) to `4294967295` (4 GB, the maximum supported limit).
+6. Click **OK**.
+7. Restart the Windows WebClient service by opening **Command Prompt (Admin)** and running:
+   ```cmd
+   net stop WebClient
+   net start WebClient
+   ```
+
+---
 
 ### 🍎 macOS (Finder)
 1. Open **Finder** $\rightarrow$ Press `Cmd + K` (Connect to Server).
@@ -111,7 +144,7 @@ sudo systemctl daemon-reload
 
 ### 🐧 Linux (Nautilus / Dolphin)
 1. Open File Manager $\rightarrow$ **Other Locations** $\rightarrow$ **Connect to Server**.
-2. Address: `davs://your-rpi-ip:8443` (or `dav://...` if HTTP).
+2. Address: `davs://your-rpi-ip:9443` (or `dav://...` if HTTP).
 
 ---
 
@@ -126,6 +159,7 @@ ENABLE_WEBDAV=true
 
 When `luks-manager.sh` executes:
 1. LUKS volume is decrypted and mounted to `/mnt/crypto_data`.
-2. Script runs `sudo systemctl start webdav`.
-3. WebDAV is accessible across your network.
-4. On teardown, script runs `sudo systemctl stop webdav` before drive unmount and 220V power cutoff.
+2. Kernel bind-mounts `/mnt/crypto_data` to `/srv/webdav/crypto_data`.
+3. Script runs `systemctl restart webdav`.
+4. WebDAV serves strictly the mounted volume folders across your network.
+5. On teardown, script unmounts bind-mounts and runs `systemctl stop webdav` before drive unmount and 220V power cutoff.
