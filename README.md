@@ -150,7 +150,7 @@ sudo apt update && sudo apt install -y cryptsetup lvm2 udisks2 psmisc curl socat
 
 3. **Make scripts executable**:
    ```bash
-   chmod +x luks-manager.sh test_ha_tapo.sh daemon/install.sh web/install.sh scripts/install-webdav.sh scripts/update-env.sh
+   chmod +x luks-manager.sh test_ha_tapo.sh daemon/install.sh web/install.sh scripts/install-webdav.sh scripts/update-env.sh scripts/notify-discord.sh scripts/notify-discord.py
    ```
 
 ---
@@ -219,6 +219,8 @@ LUKS Companion supporta l'invio automatico di notifiche con embed ricchi su un c
 3. **Test manuale del Webhook**:
    ```bash
    ./scripts/notify-discord.sh test
+   # oppure direttamente con Python:
+   ./scripts/notify-discord.py test
    ```
 
 ---
