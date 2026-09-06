@@ -45,6 +45,14 @@ def get_status():
         "mount_crypto": mount_crypto
     }
 
+def send_response(conn, payload):
+    try:
+        data = json.dumps(payload).encode('utf-8')
+        conn.sendall(data)
+    except (BrokenPipeError, ConnectionResetError, OSError):
+        # Client disconnected or closed socket before reading response
+        pass
+
 def handle_client(conn):
     try:
         data = conn.recv(4096)
@@ -54,18 +62,18 @@ def handle_client(conn):
         try:
             req = json.loads(data.decode('utf-8'))
         except json.JSONDecodeError:
-            conn.sendall(json.dumps({"status": "error", "message": "Richiesta JSON non valida"}).encode('utf-8'))
+            send_response(conn, {"status": "error", "message": "Richiesta JSON non valida"})
             return
 
         action = req.get("action", "")
 
         if action == "status":
-            conn.sendall(json.dumps({"status": "ok", "data": get_status()}).encode('utf-8'))
+            send_response(conn, {"status": "ok", "data": get_status()})
 
         elif action == "unlock":
             passphrase = req.get("passphrase", "")
             if not passphrase:
-                conn.sendall(json.dumps({"status": "error", "message": "Passphrase vuota o mancante"}).encode('utf-8'))
+                send_response(conn, {"status": "error", "message": "Passphrase vuota o mancante"})
                 return
 
             proc = subprocess.Popen(
@@ -78,18 +86,18 @@ def handle_client(conn):
             stdout, stderr = proc.communicate(input=passphrase + "\n")
             
             if proc.returncode == 0:
-                conn.sendall(json.dumps({
+                send_response(conn, {
                     "status": "ok",
                     "message": "Volume sbloccato e montato con successo",
                     "output": stdout.strip(),
                     "data": get_status()
-                }).encode('utf-8'))
+                })
             else:
-                conn.sendall(json.dumps({
+                send_response(conn, {
                     "status": "error",
                     "message": stderr.strip() or stdout.strip() or "Errore durante lo sblocco",
                     "data": get_status()
-                }).encode('utf-8'))
+                })
 
         elif action == "stop":
             proc = subprocess.Popen(
@@ -102,26 +110,31 @@ def handle_client(conn):
             stdout, stderr = proc.communicate()
             
             if proc.returncode == 0:
-                conn.sendall(json.dumps({
+                send_response(conn, {
                     "status": "ok",
                     "message": "Procedura di teardown e spegnimento completata",
                     "output": stdout.strip(),
                     "data": get_status()
-                }).encode('utf-8'))
+                })
             else:
-                conn.sendall(json.dumps({
+                send_response(conn, {
                     "status": "error",
                     "message": stderr.strip() or stdout.strip() or "Errore durante l'arresto",
                     "data": get_status()
-                }).encode('utf-8'))
+                })
 
         else:
-            conn.sendall(json.dumps({"status": "error", "message": f"Azione '{action}' sconosciuta"}).encode('utf-8'))
+            send_response(conn, {"status": "error", "message": f"Azione '{action}' sconosciuta"})
 
+    except (BrokenPipeError, ConnectionResetError):
+        pass
     except Exception as e:
-        conn.sendall(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
+        send_response(conn, {"status": "error", "message": str(e)})
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except OSError:
+            pass
 
 def main():
     if os.path.exists(SOCKET_PATH):
@@ -133,7 +146,7 @@ def main():
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(SOCKET_PATH)
     os.chmod(SOCKET_PATH, 0o666)
-    server.listen(5)
+    server.listen(10)
 
     def cleanup(signum, frame):
         server.close()
@@ -152,6 +165,8 @@ def main():
         try:
             conn, _ = server.accept()
             handle_client(conn)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
         except Exception as e:
             print(f"[!] Errore connessione client: {e}", file=sys.stderr)
 
