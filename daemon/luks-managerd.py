@@ -9,6 +9,7 @@ import socket
 import subprocess
 import signal
 import base64
+import time
 import shutil
 import threading
 
@@ -373,6 +374,90 @@ def handle_client(conn):
         except OSError:
             pass
 
+def get_io_stats_for_device(dev_path):
+    if not dev_path or not os.path.exists(dev_path):
+        return None
+    try:
+        dev_real = os.path.realpath(dev_path)
+        dev_name = os.path.basename(dev_real)
+        for stat_path in [f"/sys/class/block/{dev_name}/stat", f"/sys/block/{dev_name}/stat"]:
+            if os.path.isfile(stat_path):
+                with open(stat_path, "r") as f:
+                    parts = f.read().split()
+                    if len(parts) >= 5:
+                        return f"{parts[0]}:{parts[4]}"
+    except Exception:
+        pass
+    return None
+
+def idle_watchdog_loop():
+    check_interval = 15
+    idle_seconds = 0
+    last_stats = None
+
+    while True:
+        time.sleep(check_interval)
+        try:
+            env = load_env()
+            try:
+                timeout_min = int(env.get("IDLE_TIMEOUT_MIN", "30"))
+            except ValueError:
+                timeout_min = 30
+
+            if timeout_min <= 0:
+                idle_seconds = 0
+                last_stats = None
+                continue
+
+            max_idle_seconds = timeout_min * 60
+
+            vg_name = env.get("VG_NAME", "")
+            mapper_name = env.get("MAPPER_NAME", "")
+            storage_base = env.get("STORAGE_BASE", "/srv/storage")
+            target_dev_cfg = env.get("TARGET_DEV", "")
+            mount_crypto = os.path.join(storage_base, mapper_name) if mapper_name else ""
+
+            if not mount_crypto or not os.path.ismount(mount_crypto):
+                idle_seconds = 0
+                last_stats = None
+                continue
+
+            target_dev = find_target_block_device(vg_name, mapper_name, mount_crypto, target_dev_cfg)
+            if not target_dev:
+                continue
+
+            current_stats = get_io_stats_for_device(target_dev)
+            if current_stats is None:
+                continue
+
+            if last_stats is None:
+                last_stats = current_stats
+                idle_seconds = 0
+                continue
+
+            if current_stats == last_stats:
+                idle_seconds += check_interval
+                if idle_seconds >= max_idle_seconds:
+                    print(f"[*] WATCHDOG: Inattività I/O rilevata per {idle_seconds // 60} min ({timeout_min}m max). Avvio spegnimento automatico...")
+                    if action_lock.acquire(blocking=False):
+                        try:
+                            proc = subprocess.Popen(
+                                ["/usr/bin/env", "bash", MANAGER_SCRIPT, "stop"],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL
+                            )
+                            proc.communicate()
+                            notify_discord("watchdog")
+                        finally:
+                            action_lock.release()
+                        idle_seconds = 0
+                        last_stats = None
+            else:
+                idle_seconds = 0
+                last_stats = current_stats
+        except Exception as e:
+            print(f"[!] Errore nel watchdog daemon: {e}", file=sys.stderr)
+
 def main():
     if os.path.exists(SOCKET_PATH):
         try:
@@ -396,6 +481,9 @@ def main():
 
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
+
+    # Start background Idle Watchdog thread
+    threading.Thread(target=idle_watchdog_loop, daemon=True).start()
 
     print(f"[*] LUKS Manager Socket Daemon attivo su: {SOCKET_PATH}")
     while True:

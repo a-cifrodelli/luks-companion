@@ -255,9 +255,13 @@ get_disk_io_stats() {
         echo "0 0"
         return
     fi
+    local dev_real
+    dev_real=$(readlink -f "$dev" 2>/dev/null || echo "$dev")
     local dev_name
-    dev_name=$(basename "$dev")
-    if [ -f "/sys/block/${dev_name}/stat" ]; then
+    dev_name=$(basename "$dev_real")
+    if [ -f "/sys/class/block/${dev_name}/stat" ]; then
+        awk '{print $1, $5}' "/sys/class/block/${dev_name}/stat" 2>/dev/null || echo "0 0"
+    elif [ -f "/sys/block/${dev_name}/stat" ]; then
         awk '{print $1, $5}' "/sys/block/${dev_name}/stat" 2>/dev/null || echo "0 0"
     else
         echo "0 0"
