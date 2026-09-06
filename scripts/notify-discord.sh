@@ -72,9 +72,16 @@ if [ "${ENABLE_WEBDAV:-true}" = "true" ]; then
     WEBDAV_VAL="Attivo (Porta ${WEBDAV_PORT:-9088})"
 fi
 
-# Construct JSON payload using python3 if available (safest escaping) or fallback
+# Construct JSON payload using python3/python if available (safest escaping) or fallback
+PYTHON_BIN=""
 if command -v python3 >/dev/null 2>&1; then
-    PAYLOAD=$(python3 -c '
+    PYTHON_BIN="python3"
+elif command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+fi
+
+if [ -n "$PYTHON_BIN" ]; then
+    PAYLOAD=$("$PYTHON_BIN" -c '
 import json, sys, os
 
 event = sys.argv[1]
@@ -104,7 +111,6 @@ if custom and event not in ["error", "fail"]:
 
 payload = {
     "username": "LUKS Companion",
-    "avatar_url": "https://raw.githubusercontent.com/a-cifrodelli/luks-companion/main/web/static/favicon.svg",
     "embeds": [
         {
             "title": title,
@@ -140,12 +146,26 @@ EOF
 )
 fi
 
-# Send webhook asynchronously with 5s timeout to never block main script
-(
-    curl -s -f --max-time 5 -X POST \
-        -H "Content-Type: application/json" \
-        -d "$PAYLOAD" \
-        "$WEBHOOK_URL" >/dev/null 2>&1 || true
-) &
+# Send webhook to Discord with a 10-second timeout
+HTTP_RESP=$(curl -s -S --max-time 10 -w "\n%{http_code}" -X POST \
+    -H "Content-Type: application/json" \
+    -d "$PAYLOAD" \
+    "$WEBHOOK_URL" 2>&1 || echo -e "Curl failed\n000")
 
-exit 0
+HTTP_CODE=$(echo "$HTTP_RESP" | tail -n1)
+BODY=$(echo "$HTTP_RESP" | sed '$d')
+
+if [ -t 1 ]; then
+    if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
+        echo "[✓] Notifica Discord inviata con successo ($EVENT, HTTP $HTTP_CODE)!"
+    else
+        echo "[✗] Errore invio Discord (HTTP $HTTP_CODE): $BODY" >&2
+    fi
+fi
+
+if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
+    exit 0
+else
+    exit 1
+fi
+
