@@ -68,9 +68,10 @@ users:
 
 ---
 
-## ⚙️ Systemd Service (`/etc/systemd/system/webdav.service`)
+## ⚙️ Systemd Service Template (`config/webdav.service.template`)
 
-Create the systemd unit file to allow `luks-manager` to start and stop the server:
+The systemd unit definition resides in `config/webdav.service.template`. The installer copies it to `/etc/systemd/system/webdav.service`:
+
 
 ```ini
 [Unit]

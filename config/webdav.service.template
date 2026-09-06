@@ -1,0 +1,15 @@
+# ===================================================================
+# WEBDAV SYSTEMD SERVICE TEMPLATE FOR LUKS MANAGER
+# ===================================================================
+[Unit]
+Description=WebDAV Server Daemon for LUKS Manager
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/webdav --config /etc/webdav/config.yaml
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

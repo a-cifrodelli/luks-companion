@@ -6,7 +6,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${SCRIPT_DIR}/.env"
-TEMPLATE_FILE="${SCRIPT_DIR}/config/webdav.yaml.template"
+YAML_TEMPLATE_FILE="${SCRIPT_DIR}/config/webdav.yaml.template"
+SERVICE_TEMPLATE_FILE="${SCRIPT_DIR}/config/webdav.service.template"
 
 if [ "$EUID" -ne 0 ]; then
     echo "[!] ERRORE: Questo script deve essere eseguito come root (sudo ./scripts/install-webdav.sh)" >&2
@@ -27,8 +28,13 @@ fi
 
 MOUNT_CRYPTO="${MOUNT_CRYPTO:-/mnt/encrypted_vault}"
 
-if [ ! -f "$TEMPLATE_FILE" ]; then
-    echo "[!] ERRORE: Template di configurazione non trovato in ${TEMPLATE_FILE}" >&2
+if [ ! -f "$YAML_TEMPLATE_FILE" ]; then
+    echo "[!] ERRORE: Template YAML non trovato in ${YAML_TEMPLATE_FILE}" >&2
+    exit 1
+fi
+
+if [ ! -f "$SERVICE_TEMPLATE_FILE" ]; then
+    echo "[!] ERRORE: Template Service non trovato in ${SERVICE_TEMPLATE_FILE}" >&2
     exit 1
 fi
 
@@ -70,27 +76,14 @@ echo "[3/4] Generazione /etc/webdav/config.yaml dal template (Scope: ${MOUNT_CRY
 mkdir -p /etc/webdav
 
 export WEBDAV_USER WEBDAV_PASSWORD_HASH MOUNT_CRYPTO
-envsubst '$WEBDAV_USER $WEBDAV_PASSWORD_HASH $MOUNT_CRYPTO' < "$TEMPLATE_FILE" > /etc/webdav/config.yaml
+envsubst '$WEBDAV_USER $WEBDAV_PASSWORD_HASH $MOUNT_CRYPTO' < "$YAML_TEMPLATE_FILE" > /etc/webdav/config.yaml
 
 chmod 600 /etc/webdav/config.yaml
-echo "[✓] Configurazione creata ed applicata in /etc/webdav/config.yaml"
+echo "[✓] Configurazione applicata in /etc/webdav/config.yaml"
 
-# 4. CREATE SYSTEMD SERVICE
-echo "[4/4] Creazione servizio systemd /etc/systemd/system/webdav.service..."
-cat <<EOF > /etc/systemd/system/webdav.service
-[Unit]
-Description=WebDAV Server Daemon for LUKS Manager
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/webdav --config /etc/webdav/config.yaml
-Restart=on-failure
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-EOF
+# 4. INSTANTIATE SYSTEMD SERVICE FROM TEMPLATE
+echo "[4/4] Copia del servizio systemd da config/webdav.service.template..."
+cp "$SERVICE_TEMPLATE_FILE" /etc/systemd/system/webdav.service
 
 systemctl daemon-reload
 echo "[✓] Servizio systemd registrato con successo!"
