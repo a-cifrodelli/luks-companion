@@ -9,7 +9,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${SCRIPT_DIR}/.env"
 
-if [ -f "$ENV_FILE" ]; then
+# If .env is root:root 600 and current user is unprivileged, auto-escalate with sudo if interactive
+if [ -f "$ENV_FILE" ] && [ ! -r "$ENV_FILE" ] && [ "$(id -u)" -ne 0 ]; then
+    if [ -t 0 ]; then
+        exec sudo "$0" "$@"
+    else
+        exit 0
+    fi
+fi
+
+if [ -f "$ENV_FILE" ] && [ -r "$ENV_FILE" ]; then
     set -o allexport
     # shellcheck disable=SC1090
     source "$ENV_FILE"
