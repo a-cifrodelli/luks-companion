@@ -10,10 +10,25 @@ import mimetypes
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ENV_FILE = os.path.join(BASE_DIR, ".env")
 SOCKET_PATH = "/run/luks-manager.sock"
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
-PORT = int(os.environ.get("LUKS_WEB_PORT", 9099))
-HOST = os.environ.get("LUKS_WEB_HOST", "0.0.0.0")
+
+def load_env():
+    env = {}
+    if os.path.exists(ENV_FILE):
+        with open(ENV_FILE, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, val = line.split("=", 1)
+                    env[key.strip()] = val.strip().strip('"').strip("'")
+    return env
+
+env_config = load_env()
+PORT = int(os.environ.get("WEB_PORT") or env_config.get("WEB_PORT") or 9099)
+HOST = os.environ.get("WEB_HOST") or env_config.get("WEB_HOST") or "0.0.0.0"
 
 def send_socket_command(payload: dict, timeout: int = 45) -> dict:
     if not os.path.exists(SOCKET_PATH):

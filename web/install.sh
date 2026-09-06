@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SERVICE_TEMPLATE_FILE="${SCRIPT_DIR}/luks-web.service.template"
 TARGET_SERVICE_FILE="/etc/systemd/system/luks-web.service"
+ENV_FILE="${REPO_DIR}/.env"
 
 if [ "$EUID" -ne 0 ]; then
     echo "[!] ERRORE: Questo script deve essere eseguito come root (sudo ./web/install.sh)" >&2
@@ -37,7 +38,20 @@ systemctl enable luks-web.service
 echo "[3/3] Avvio del servizio luks-web..."
 systemctl restart luks-web.service
 
+# Read configured port from .env if present
+WEB_PORT="9099"
+if [ -f "$ENV_FILE" ]; then
+    WEB_PORT_CONFIG=$(grep -E "^WEB_PORT=" "$ENV_FILE" | cut -d'=' -f2 | tr -d '"' | tr -d "'" || echo "")
+    if [ -n "$WEB_PORT_CONFIG" ]; then
+        WEB_PORT="$WEB_PORT_CONFIG"
+    fi
+fi
+
 echo -e "\n=== WEB APP REGISTRATA ED AVVIATA CON SUCCESSO! ==="
-echo "La dashboard è accessibile su:"
-echo "  -> http://<IP_RASPBERRY_PI>:9099"
-echo "  -> o tramite reverse proxy Traefik (es. https://nas.rpi.lan)"
+echo "La dashboard HTTP è ora in ascolto sulla porta: ${WEB_PORT}"
+echo "Accesso diretto:"
+echo "  -> http://<IP_DEL_SERVER>:${WEB_PORT}"
+echo ""
+echo "Nota TLS / HTTPS: Per esporre l'interfaccia con certificato SSL/HTTPS,"
+echo "configura il tuo reverse proxy preferito (Nginx, Traefik, Caddy, Apache) che"
+echo "inoltra le richieste verso http://127.0.0.1:${WEB_PORT}."

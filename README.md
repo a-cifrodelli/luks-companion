@@ -169,11 +169,13 @@ Inspects live power, LVM, LUKS, mount, and WebDAV state:
 sudo ./daemon/install.sh
 ```
 
-### 2. Avvio della Web Dashboard (Porta 9099)
+### 2. Avvio della Web Dashboard (Default: Porta 9099)
 ```bash
 sudo ./web/install.sh
 ```
-Accessibile su `http://<RPI_IP>:9099` o configurabile dietro reverse proxy Traefik (es. `https://storage.rpi.lan`).
+La dashboard HTTP si avvia sulla porta configurata in `.env` (`WEB_PORT=9099`):
+* **Accesso diretto HTTP**: `http://<IP_DEL_SERVER>:9099`
+* **Terminazione TLS / HTTPS**: Se desideri esporla su HTTPS con certificato SSL, configura il tuo reverse proxy preferito (Traefik, Nginx, Caddy, Apache) inoltrando le richieste verso `http://127.0.0.1:9099`. (Vedi [docs/web.md](docs/web.md) per dettagli ed esempi).
 
 ---
 

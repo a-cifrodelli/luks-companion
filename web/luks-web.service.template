@@ -13,8 +13,6 @@ WorkingDirectory=${REPO_DIR}
 ExecStart=/usr/bin/python3 ${REPO_DIR}/web/server.py
 Restart=always
 RestartSec=3
-Environment=LUKS_WEB_PORT=9099
-Environment=LUKS_WEB_HOST=0.0.0.0
 
 [Install]
 WantedBy=multi-user.target

@@ -1,6 +1,6 @@
 # Web Dashboard Gateway Guide 🖥️
 
-This document describes the setup, architecture, and Traefik reverse proxy integration for the **LUKS Manager Desktop Web Dashboard** (`web/`).
+This document describes the setup, configuration, and reverse proxy TLS integration for the **LUKS Manager Desktop Web Dashboard** (`web/`).
 
 ---
 
@@ -11,13 +11,13 @@ The Web Dashboard runs as a lightweight, zero-dependency Python service that bri
 ```mermaid
 flowchart LR
     Browser["Desktop Browser<br/><i>(Web Crypto API in RAM)</i>"]
-    Traefik["Reverse Proxy / TLS<br/><code>https://storage.rpi.lan</code>"]
+    ReverseProxy["Reverse Proxy (TLS / HTTPS)<br/><i>(Traefik / Nginx / Caddy)</i>"]
     Web["<b>LUKS Web Service</b><br/><code>web/server.py (:9099)</code>"]
     Socket[("<b>UNIX Domain Socket</b><br/><code>/run/luks-manager.sock</code>")]
     Daemon["<b>luks-managerd</b><br/><i>Root Daemon</i>"]
 
-    Browser -->|HTTPS| Traefik
-    Traefik -->|HTTP :9099| Web
+    Browser -->|HTTPS (443)| ReverseProxy
+    ReverseProxy -->|HTTP (:9099)| Web
     Web -->|JSON IPC| Socket
     Socket --> Daemon
 ```
@@ -26,6 +26,7 @@ flowchart LR
 - **100% Client-Side Steganography**: Key generation, encryption, and extraction are performed in browser memory via the **Web Crypto API**. Raw photos are never uploaded or stored on the server during creation.
 - **Zero Key Persistence**: Passphrases and uploaded keyfiles are held temporarily in client and server RAM and piped directly into kernel memory (`dm-crypt`).
 - **HTTP Security Headers**: Native enforcement of `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and `Cache-Control: no-store`.
+- **Configurable Port in `.env`**: Port and host are read dynamically from `.env` (`WEB_PORT=9099`, `WEB_HOST=0.0.0.0`).
 
 ---
 
@@ -48,16 +49,18 @@ journalctl -u luks-web.service -f
 
 ---
 
-## 🌐 Traefik Reverse Proxy Configuration
+## 🌐 TLS / HTTPS Reverse Proxy Integration
 
-If you run Traefik (e.g. on Arch Linux ARM / Raspberry Pi), you can route your local domain (such as `https://storage.rpi.lan`) directly to `luks-web` on port `9099`.
+The `luks-web` service runs plain HTTP locally on the port configured in `.env` (default `9099`).
 
-### Example Dynamic Traefik Configuration (`/etc/traefik/dynamic/luks-web.yaml`):
+To terminate TLS / HTTPS with your custom domain and SSL certificate, configure your reverse proxy of choice to forward to `http://127.0.0.1:9099`.
+
+### Option A: Traefik Dynamic File (`/etc/traefik/dynamic/luks-web.yaml`)
 ```yaml
 http:
   routers:
     luks-web:
-      rule: "Host(`storage.rpi.lan`)"
+      rule: "Host(`storage.your-domain.lan`)"
       service: luks-web-service
       entryPoints:
         - websecure
@@ -68,6 +71,32 @@ http:
       loadBalancer:
         servers:
           - url: "http://127.0.0.1:9099"
+```
+
+### Option B: Nginx (`/etc/nginx/sites-available/luks-web`)
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name storage.your-domain.lan;
+
+    ssl_certificate /etc/ssl/certs/storage.crt;
+    ssl_certificate_key /etc/ssl/certs/storage.key;
+
+    location / {
+        proxy_pass http://127.0.0.1:9099;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+### Option C: Caddy (`/etc/caddy/Caddyfile`)
+```caddy
+storage.your-domain.lan {
+    reverse_proxy 127.0.0.1:9099
+}
 ```
 
 ---
