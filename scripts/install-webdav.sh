@@ -33,8 +33,8 @@ fi
 
 WEBDAV_PORT="${WEBDAV_PORT:-9443}"
 
-# Dynamically derive WebDAV scope as the parent directory of the configured mount point
-WEBDAV_SCOPE="$(dirname "${MOUNT_CRYPTO}")"
+# Set WebDAV scope directly to the configured MOUNT_CRYPTO mountpoint
+WEBDAV_SCOPE="${MOUNT_CRYPTO}"
 
 if [ ! -f "$YAML_TEMPLATE_FILE" ]; then
     echo "[!] ERRORE: Template YAML non trovato in ${YAML_TEMPLATE_FILE}" >&2

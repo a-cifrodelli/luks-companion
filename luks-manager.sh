@@ -123,9 +123,13 @@ is_system_disk() {
 }
 
 detect_target_device() {
-    # 1. Resolve strictly via LVM Physical Volume for VG_NAME
+    # 1. Resolve strictly via LVM Physical Volume for VG_NAME (completely silent)
     local pv_dev
-    pv_dev=$(pvs --noheadings -o pv_name -g "$VG_NAME" 2>/dev/null | tr -d ' ' | head -n1 || echo "")
+    pv_dev=$(pvs --noheadings -o pv_name -g "$VG_NAME" >/dev/null 2>&1 | tr -d ' ' | head -n1 || echo "")
+    if [ -z "$pv_dev" ]; then
+        pv_dev=$(pvs --noheadings -o pv_name 2>/dev/null | tr -d ' ' | head -n1 || echo "")
+    fi
+
     if [ -n "$pv_dev" ] && [ -b "$pv_dev" ]; then
         local parent_disk
         parent_disk=$(lsblk -no PKNAME "$pv_dev" 2>/dev/null || echo "")
@@ -139,7 +143,7 @@ detect_target_device() {
 
     # 2. Check TARGET_DEV ONLY if set AND verified to contain VG_NAME AND not system disk
     if [ -n "$TARGET_DEV" ] && [ -b "$TARGET_DEV" ]; then
-        if pvs "$TARGET_DEV" 2>/dev/null | grep -q "$VG_NAME"; then
+        if pvs "$TARGET_DEV" >/dev/null 2>&1 | grep -q "$VG_NAME"; then
             if ! is_system_disk "$TARGET_DEV"; then
                 echo "$TARGET_DEV"
                 return
@@ -213,7 +217,7 @@ safe_power_off_sequence() {
 
     echo "  -> Disattivazione Volume Group LVM..."
     for retry in 1 2 3; do
-        if vgchange -an "$VG_NAME" 2>/dev/null; then
+        if vgchange -an "$VG_NAME" >/dev/null 2>&1; then
             echo "  [✓] Volume Group LVM disattivato."
             break
         fi
@@ -278,33 +282,9 @@ trap_cleanup() {
 trap trap_cleanup SIGINT SIGTERM SIGHUP
 
 # ===================================================================
-# 2. INITIAL PASSPHRASE PROMPT (BEFORE 220V POWER-ON)
+# 1. HARDWARE POWER-ON (HOME ASSISTANT)
 # ===================================================================
 echo "=== LUKS MANAGER: AVVIO SISTEMA STOC CUSTODITO ==="
-
-PASSPHRASE_PROVIDED=false
-for try in $(seq 1 "$MAX_PASSPHRASE_TRIES"); do
-    echo -n -e "\n[*] Inserisci la Passphrase LUKS per '$LV_CRYPTO_PATH' (tentativo $try di $MAX_PASSPHRASE_TRIES): "
-    read -rs PASSPHRASE
-    echo ""
-
-    if [ -n "$PASSPHRASE" ]; then
-        PASSPHRASE_PROVIDED=true
-        break
-    else
-        echo "[!] Passphrase vuota non valida. Riprova..." >&2
-    fi
-done
-
-if [ "$PASSPHRASE_PROVIDED" = false ]; then
-    echo "[!] ERRORE: Nessuna passphrase fornita. Avvio spegnimento di sicurezza..." >&2
-    safe_power_off_sequence
-    exit 1
-fi
-
-# ===================================================================
-# 3. HARDWARE POWER-ON (HOME ASSISTANT)
-# ===================================================================
 echo -e "\n[1/7] Invio comando di accensione presa a Home Assistant (${HA_ENTITY_ID})..."
 ha_call_service "turn_on" || true
 POWER_IS_ON=true
@@ -319,13 +299,16 @@ for i in $(seq 1 "$HA_WAIT_TIMEOUT"); do
     sleep 1
 done
 
+# ===================================================================
+# 2. WAIT FOR USB DISK & LVM DETECTION (QUIET / SILENT)
+# ===================================================================
 echo "[2/7] Attesa rilevamento disco dal kernel Linux (udev, max ${USB_DETECT_TIMEOUT}s)..."
 DEV_FOUND=false
 for i in $(seq 1 "$USB_DETECT_TIMEOUT"); do
-    pvscan 2>/dev/null || true
-    vgscan --mknodes 2>/dev/null || true
+    pvscan >/dev/null 2>&1 || true
+    vgscan --mknodes >/dev/null 2>&1 || true
     FOUND_DEV=$(detect_target_device)
-    if [ -n "$FOUND_DEV" ] || lvs "$VG_NAME" &>/dev/null; then
+    if [ -n "$FOUND_DEV" ] || lvs "$VG_NAME" >/dev/null 2>&1; then
         DEV_FOUND=true
         echo "[✓] Disco rilevato sul bus USB!"
         break
@@ -340,46 +323,43 @@ if [ "$DEV_FOUND" = false ]; then
 fi
 
 # ===================================================================
-# 4. LVM ACTIVATION & LUKS DECRYPTION IN-MEMORY (WITH RETRY LOOP)
+# 3. LVM ACTIVATION
 # ===================================================================
 echo "[3/7] Attivazione Volume Group LVM '$VG_NAME'..."
-vgscan --mknodes 2>/dev/null || true
-vgchange -ay "$VG_NAME"
+vgscan --mknodes >/dev/null 2>&1 || true
+vgchange -ay "$VG_NAME" >/dev/null 2>&1 || vgchange -ay "$VG_NAME"
 
+# ===================================================================
+# 4. LUKS DECRYPTION IN-MEMORY (PROMPT PASSPHRASE HERE WITH RETRIES)
+# ===================================================================
 echo "[4/7] Sblocco volume cifrato LUKS2 in RAM..."
 
 # Check if LUKS mapper is already open from a stale session
 if [ -b "/dev/mapper/${MAPPER_NAME}" ]; then
     echo "[*] Container LUKS già aperto in /dev/mapper/$MAPPER_NAME."
     VOLUME_IS_UNLOCKED=true
-    PASSPHRASE=""
 else
-    # Attempt 1 using initial passphrase provided at launch
-    if [ -n "$PASSPHRASE" ] && printf '%s' "$PASSPHRASE" | cryptsetup open "$LV_CRYPTO_PATH" "$MAPPER_NAME" --key-file - 2>/dev/null; then
-        VOLUME_IS_UNLOCKED=true
-        PASSPHRASE=""
-        echo "[✓] Volume sbloccato con successo in /dev/mapper/$MAPPER_NAME"
-    else
-        PASSPHRASE=""
-        echo "[!] Passphrase iniziale errata!" >&2
+    VOLUME_IS_UNLOCKED=false
+    for try in $(seq 1 "$MAX_PASSPHRASE_TRIES"); do
+        echo -n -e "\n[*] Inserisci la Passphrase LUKS per '$LV_CRYPTO_PATH' (tentativo $try di $MAX_PASSPHRASE_TRIES): "
+        read -rs PASSPHRASE
+        echo ""
 
-        # Retry loop for remaining attempts (up to MAX_PASSPHRASE_TRIES)
-        for try in $(seq 2 "$MAX_PASSPHRASE_TRIES"); do
-            echo -n -e "\n[*] Reinserisci la Passphrase LUKS (tentativo $try di $MAX_PASSPHRASE_TRIES): "
-            read -rs RETRY_PASSPHRASE
-            echo ""
+        if [ -z "$PASSPHRASE" ]; then
+            echo "[!] Passphrase vuota non valida. Riprova..." >&2
+            continue
+        fi
 
-            if [ -n "$RETRY_PASSPHRASE" ] && printf '%s' "$RETRY_PASSPHRASE" | cryptsetup open "$LV_CRYPTO_PATH" "$MAPPER_NAME" --key-file - 2>/dev/null; then
-                VOLUME_IS_UNLOCKED=true
-                RETRY_PASSPHRASE=""
-                echo "[✓] Volume sbloccato con successo in /dev/mapper/$MAPPER_NAME"
-                break
-            else
-                RETRY_PASSPHRASE=""
-                echo "[!] Passphrase non corretta." >&2
-            fi
-        done
-    fi
+        if printf '%s' "$PASSPHRASE" | cryptsetup open "$LV_CRYPTO_PATH" "$MAPPER_NAME" --key-file - >/dev/null 2>&1; then
+            VOLUME_IS_UNLOCKED=true
+            PASSPHRASE="" # Clear passphrase immediately
+            echo "[✓] Volume sbloccato con successo in /dev/mapper/$MAPPER_NAME"
+            break
+        else
+            PASSPHRASE=""
+            echo "[!] ERRORE: Passphrase LUKS errata." >&2
+        fi
+    done
 fi
 
 if [ "$VOLUME_IS_UNLOCKED" = false ]; then
