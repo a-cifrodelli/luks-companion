@@ -10,33 +10,46 @@ SERVICE_TEMPLATE_FILE="${SCRIPT_DIR}/luks-web.service.template"
 TARGET_SERVICE_FILE="/etc/systemd/system/luks-web.service"
 ENV_FILE="${REPO_DIR}/.env"
 
+# ANSI Color Palette
+CLR_RESET="\033[0m"
+CLR_BOLD="\033[1m"
+CLR_CYAN="\033[0;36m"
+CLR_BCYAN="\033[1;36m"
+CLR_GREEN="\033[1;32m"
+CLR_YELLOW="\033[1;33m"
+CLR_RED="\033[1;31m"
+CLR_WHITE="\033[1;37m"
+
 if [ "$EUID" -ne 0 ]; then
-    echo "[!] ERRORE: Questo script deve essere eseguito come root (sudo ./web/install.sh)" >&2
+    echo -e "${CLR_RED}[✗] ERRORE: Questo script deve essere eseguito come root (sudo ./web/install.sh)${CLR_RESET}" >&2
     exit 1
 fi
 
 if [ ! -f "$SERVICE_TEMPLATE_FILE" ]; then
-    echo "[!] ERRORE: Template di servizio web non trovato in ${SERVICE_TEMPLATE_FILE}" >&2
+    echo -e "${CLR_RED}[✗] ERRORE: Template di servizio web non trovato in ${SERVICE_TEMPLATE_FILE}${CLR_RESET}" >&2
     exit 1
 fi
 
-echo "=== LUKS MANAGER: INSTALLAZIONE WEB APP DASHBOARD ==="
+echo -e "${CLR_BCYAN}=== LUKS MANAGER: INSTALLAZIONE WEB APP DASHBOARD ===${CLR_RESET}"
 
 # Set executable permissions
 chmod +x "${SCRIPT_DIR}/server.py"
 
-echo "[1/3] Generazione /etc/systemd/system/luks-web.service..."
+echo -e "\n${CLR_CYAN}[1/3] Generazione ${CLR_WHITE}${TARGET_SERVICE_FILE}${CLR_CYAN}...${CLR_RESET}"
 export REPO_DIR
 envsubst '$REPO_DIR' < "$SERVICE_TEMPLATE_FILE" > "$TARGET_SERVICE_FILE"
 
 chmod 644 "$TARGET_SERVICE_FILE"
+echo -e "  ${CLR_GREEN}[✓] File di servizio systemd generato con successo.${CLR_RESET}"
 
-echo "[2/3] Ricarica demone systemd e abilitazione avvio automatico..."
+echo -e "\n${CLR_CYAN}[2/3] Ricarica demone systemd e abilitazione avvio automatico...${CLR_RESET}"
 systemctl daemon-reload
 systemctl enable luks-web.service
+echo -e "  ${CLR_GREEN}[✓] Servizio abilitato all'avvio.${CLR_RESET}"
 
-echo "[3/3] Avvio del servizio luks-web..."
+echo -e "\n${CLR_CYAN}[3/3] Avvio del servizio luks-web...${CLR_RESET}"
 systemctl restart luks-web.service
+echo -e "  ${CLR_GREEN}[✓] Servizio luks-web avviato.${CLR_RESET}"
 
 # Read configured port from .env if present
 WEB_PORT="9099"
@@ -47,11 +60,11 @@ if [ -f "$ENV_FILE" ]; then
     fi
 fi
 
-echo -e "\n=== WEB APP REGISTRATA ED AVVIATA CON SUCCESSO! ==="
-echo "La dashboard HTTP è ora in ascolto sulla porta: ${WEB_PORT}"
-echo "Accesso diretto:"
-echo "  -> http://<IP_DEL_SERVER>:${WEB_PORT}"
+echo -e "\n${CLR_GREEN}=== WEB APP REGISTRATA ED AVVIATA CON SUCCESSO! ===${CLR_RESET}"
+echo -e "La dashboard HTTP è ora in ascolto sulla porta: ${CLR_WHITE}${WEB_PORT}${CLR_RESET}"
+echo -e "Accesso diretto:"
+echo -e "  -> ${CLR_BOLD}http://<IP_DEL_SERVER>:${WEB_PORT}${CLR_RESET}"
 echo ""
-echo "Nota TLS / HTTPS: Per esporre l'interfaccia con certificato SSL/HTTPS,"
-echo "configura il tuo reverse proxy preferito (Nginx, Traefik, Caddy, Apache) che"
-echo "inoltra le richieste verso http://127.0.0.1:${WEB_PORT}."
+echo -e "${CLR_YELLOW}Nota Terminazione TLS / HTTPS:${CLR_RESET}"
+echo "Per esporre l'interfaccia con certificato SSL/HTTPS, configura il tuo reverse"
+echo "proxy preferito (Traefik, Nginx, Caddy, Apache) inoltrando le richieste verso http://127.0.0.1:${WEB_PORT}."

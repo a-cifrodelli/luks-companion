@@ -61,6 +61,7 @@ else
 fi
 
 # Set defaults for optional settings
+ENABLE_HOME_ASSISTANT="${ENABLE_HOME_ASSISTANT:-true}"
 HA_INSECURE_TLS="${HA_INSECURE_TLS:-true}"
 HA_WAIT_TIMEOUT="${HA_WAIT_TIMEOUT:-15}"
 USB_DETECT_TIMEOUT="${USB_DETECT_TIMEOUT:-40}"
@@ -73,6 +74,8 @@ RELOAD_SAMBA="${RELOAD_SAMBA:-false}"
 TARGET_DEV="${TARGET_DEV:-}"
 LV_BACKUP="${LV_BACKUP:-}"
 MOUNT_BACKUP="${MOUNT_BACKUP:-}"
+STORAGE_GROUP="${STORAGE_GROUP:-storage}"
+STORAGE_PERMS="${STORAGE_PERMS:-2775}"
 
 WEBDAV_SHARE_DIR="${WEBDAV_SCOPE:-/srv/webdav}"
 
@@ -148,6 +151,9 @@ TEARDOWN_DONE=false
 # -------------------------------------------------------------------
 ha_call_service() {
     local action="$1" # turn_on or turn_off
+    if [ "$ENABLE_HOME_ASSISTANT" != "true" ] || [ -z "${HA_URL:-}" ] || [ -z "${HA_ENTITY_ID:-}" ]; then
+        return 0
+    fi
     # shellcheck disable=SC2086
     if ! curl ${CURL_FLAGS} -X POST \
       -H "Authorization: Bearer ${HA_TOKEN}" \
@@ -161,6 +167,10 @@ ha_call_service() {
 }
 
 ha_get_state() {
+    if [ "$ENABLE_HOME_ASSISTANT" != "true" ] || [ -z "${HA_URL:-}" ] || [ -z "${HA_ENTITY_ID:-}" ]; then
+        echo "always-on"
+        return 0
+    fi
     local res
     # shellcheck disable=SC2086
     res=$(curl ${CURL_FLAGS} \
@@ -358,15 +368,17 @@ safe_power_off_sequence() {
     fi
 
     # Cutoff 220V Smart Plug if power was turned on OR if HA reports plug is currently ON
-    local ha_current_state
-    ha_current_state=$(ha_get_state)
-    if [ "$POWER_IS_ON" = true ] || [ "$ha_current_state" == "on" ]; then
-        echo "  -> Pausa di tolleranza pre-cutoff (${CUTOFF_GRACE_SEC}s)..."
-        sleep "$CUTOFF_GRACE_SEC"
+    if [ "$ENABLE_HOME_ASSISTANT" = "true" ]; then
+        local ha_current_state
+        ha_current_state=$(ha_get_state)
+        if [ "$POWER_IS_ON" = true ] || [ "$ha_current_state" == "on" ]; then
+            echo "  -> Pausa di tolleranza pre-cutoff (${CUTOFF_GRACE_SEC}s)..."
+            sleep "$CUTOFF_GRACE_SEC"
 
-        echo "  -> Invio comando spegnimento 220V a Home Assistant..."
-        ha_call_service "turn_off" || true
-        POWER_IS_ON=false
+            echo "  -> Invio comando spegnimento 220V a Home Assistant..."
+            ha_call_service "turn_off" || true
+            POWER_IS_ON=false
+        fi
     fi
 
     # Erase passphrase from script variable
@@ -378,8 +390,12 @@ safe_power_off_sequence() {
 # -------------------------------------------------------------------
 if [ "$COMMAND" = "status" ]; then
     echo "=== LUKS MANAGER: STATO ATTUALE ==="
-    ha_st=$(ha_get_state)
-    echo "  - Alimentazione Presa HA: ${ha_st}"
+    if [ "$ENABLE_HOME_ASSISTANT" = "true" ]; then
+        ha_st=$(ha_get_state)
+        echo "  - Alimentazione Presa HA: ${ha_st}"
+    else
+        echo "  - Alimentazione: Always-on (Home Assistant bypassato)"
+    fi
     
     if [ -d "/dev/${VG_NAME}" ] || lvs "$VG_NAME" >/dev/null 2>&1; then
         echo "  - Volume Group LVM ($VG_NAME): ATTIVO"
@@ -427,7 +443,11 @@ if [ "$COMMAND" = "stop" ]; then
     echo "    - Chiave LUKS distrutta dalla RAM."
     echo "    - Volume Group LVM disattivato."
     echo "    - Testine parcheggiate su rampa e bus USB disconnesso."
-    echo "    - Alimentazione 220V disattivata (0 Watt consumi)."
+    if [ "$ENABLE_HOME_ASSISTANT" = "true" ]; then
+        echo "    - Alimentazione 220V disattivata (0 Watt consumi)."
+    else
+        echo "    - Disco disconnesso via bus SCSI (Always-on)."
+    fi
     exit 0
 fi
 
@@ -447,19 +467,23 @@ trap trap_cleanup SIGINT SIGTERM SIGHUP
 # 1. HARDWARE POWER-ON (HOME ASSISTANT)
 # ===================================================================
 echo "=== LUKS MANAGER: AVVIO SISTEMA STOC CUSTODITO ==="
-echo -e "\n[1/7] Invio comando di accensione presa a Home Assistant (${HA_ENTITY_ID})..."
-ha_call_service "turn_on" || true
-POWER_IS_ON=true
+if [ "$ENABLE_HOME_ASSISTANT" = "true" ]; then
+    echo -e "\n[1/7] Invio comando di accensione presa a Home Assistant (${HA_ENTITY_ID})..."
+    ha_call_service "turn_on" || true
+    POWER_IS_ON=true
 
-echo "[*] Attesa conferma stato 'on' da Home Assistant..."
-for i in $(seq 1 "$HA_WAIT_TIMEOUT"); do
-    STATE=$(ha_get_state)
-    if [ "$STATE" == "on" ]; then
-        echo "[✓] Presa smart alimentata!"
-        break
-    fi
-    sleep 1
-done
+    echo "[*] Attesa conferma stato 'on' da Home Assistant..."
+    for i in $(seq 1 "$HA_WAIT_TIMEOUT"); do
+        STATE=$(ha_get_state)
+        if [ "$STATE" == "on" ]; then
+            echo "[✓] Presa smart alimentata!"
+            break
+        fi
+        sleep 1
+    done
+else
+    echo -e "\n[1/7] Home Assistant disabilitato (disco Always-on / autoalimentato). Salto alimentazione..."
+fi
 
 # ===================================================================
 # 2. WAIT FOR USB DISK & LVM DETECTION (QUIET / SILENT)
@@ -579,6 +603,12 @@ if ! mountpoint -q "$MOUNT_CRYPTO"; then
     mount -o noatime,nodev,nosuid "/dev/mapper/$MAPPER_NAME" "$MOUNT_CRYPTO"
 fi
 FILESYSTEM_IS_MOUNTED=true
+
+# Apply shared group permissions to allow seamless write access without 777
+if [ -n "${STORAGE_GROUP:-}" ] && getent group "$STORAGE_GROUP" >/dev/null 2>&1; then
+    chgrp "$STORAGE_GROUP" "$MOUNT_CRYPTO" 2>/dev/null || true
+    chmod "${STORAGE_PERMS:-2775}" "$MOUNT_CRYPTO" 2>/dev/null || true
+fi
 echo "[✓] Dati Cifrati montati su: $MOUNT_CRYPTO"
 
 if [ -n "$LV_BACKUP_PATH" ] && [ -n "$MOUNT_BACKUP" ]; then
@@ -586,12 +616,20 @@ if [ -n "$LV_BACKUP_PATH" ] && [ -n "$MOUNT_BACKUP" ]; then
     if ! mountpoint -q "$MOUNT_BACKUP"; then
         mount -o noatime,nodev,nosuid "$LV_BACKUP_PATH" "$MOUNT_BACKUP" 2>/dev/null || true
     fi
+    if [ -n "${STORAGE_GROUP:-}" ] && getent group "$STORAGE_GROUP" >/dev/null 2>&1; then
+        chgrp "$STORAGE_GROUP" "$MOUNT_BACKUP" 2>/dev/null || true
+        chmod "${STORAGE_PERMS:-2775}" "$MOUNT_BACKUP" 2>/dev/null || true
+    fi
     echo "[✓] Dati Secondo Volume montati su: $MOUNT_BACKUP"
 fi
 
 if [ "$ENABLE_WEBDAV" = "true" ]; then
     echo "[*] Configurazione ambito WebDAV isolato in ${WEBDAV_SHARE_DIR}..."
     mkdir -p "$WEBDAV_SHARE_DIR"
+    if [ -n "${STORAGE_GROUP:-}" ] && getent group "$STORAGE_GROUP" >/dev/null 2>&1; then
+        chgrp "$STORAGE_GROUP" "$WEBDAV_SHARE_DIR" 2>/dev/null || true
+        chmod "${STORAGE_PERMS:-2775}" "$WEBDAV_SHARE_DIR" 2>/dev/null || true
+    fi
     umount -l "$WEBDAV_SHARE_DIR"/* 2>/dev/null || true
     rm -rf "${WEBDAV_SHARE_DIR:?}"/* 2>/dev/null || true
 

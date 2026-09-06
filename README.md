@@ -11,6 +11,16 @@ An on-demand, zero-standby-power LUKS2 & LVM storage subsystem orchestrator desi
 
 It combines **Home Assistant REST API smart plug control**, **LVM Volume Group activation**, **RAM-only LUKS2 passphrase & keyfile decryption (`stdin`)**, **lightweight WebDAV sharing**, and **clean SCSI spindown (`udisksctl power-off`)** to achieve true **0 Watt cold storage standby** with safe physical head parking.
 
+> [!NOTE]
+> ### 🎯 Destinatari e Prerequisiti di Competenza
+> Questo progetto **non è una suite consumer "plug-and-play"** per utenti alle prime armi, ma uno strumento di orchestrazione avanzato pensato per sistemisti, power user e amministratori Linux con già familiarità con:
+> - **LUKS2 / dm-crypt** (header crittografici, keyslot Argon2id, mappatura `/dev/mapper/*`).
+> - **LVM2** (concetti di *Physical Volumes*, *Volume Groups* e *Logical Volumes*).
+> - **Linux Storage & Kernel VFS** (mount point, permessi POSIX, udev, bus SCSI/USB e spindown).
+> - **Home Automation** (Home Assistant REST API, switch smart per cut-off elettrico a 220V).
+>
+> Il software gestisce l'automazione a monte e a valle (alimentazione, bus scan, decifratura in RAM, montaggio ed espulsione SCSI sicura), assumendo che i volumi LVM e i container LUKS siano già stati partizionati e formattati correttamente dall'amministratore.
+
 ---
 
 ## 📐 Architecture Overview
@@ -122,7 +132,7 @@ sudo apt update && sudo apt install -y cryptsetup lvm2 udisks2 psmisc curl socat
    ```
 
 2. **Configure your environment**:
-   Copy `.env.example` to `.env` and fill in your Home Assistant URL, token, entity ID, and LVM names:
+   Copy `.env.example` to `.env` and fill in your parameters (or run `./scripts/update-env.sh` to sync missing variables into an existing `.env`):
    ```bash
    cp .env.example .env
    nano .env
@@ -131,7 +141,7 @@ sudo apt update && sudo apt install -y cryptsetup lvm2 udisks2 psmisc curl socat
 
 3. **Make scripts executable**:
    ```bash
-   chmod +x luks-manager.sh test_ha_tapo.sh daemon/install.sh web/install.sh scripts/install-webdav.sh
+   chmod +x luks-manager.sh test_ha_tapo.sh daemon/install.sh web/install.sh scripts/install-webdav.sh scripts/update-env.sh
    ```
 
 ---

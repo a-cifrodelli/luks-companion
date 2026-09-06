@@ -9,8 +9,18 @@ ENV_FILE="${SCRIPT_DIR}/.env"
 YAML_TEMPLATE_FILE="${SCRIPT_DIR}/config/webdav.yaml.template"
 SERVICE_TEMPLATE_FILE="${SCRIPT_DIR}/config/webdav.service.template"
 
+# ANSI Color Palette
+CLR_RESET="\033[0m"
+CLR_BOLD="\033[1m"
+CLR_CYAN="\033[0;36m"
+CLR_BCYAN="\033[1;36m"
+CLR_GREEN="\033[1;32m"
+CLR_YELLOW="\033[1;33m"
+CLR_RED="\033[1;31m"
+CLR_WHITE="\033[1;37m"
+
 if [ "$EUID" -ne 0 ]; then
-    echo "[!] ERRORE: Questo script deve essere eseguito come root (sudo ./scripts/install-webdav.sh)" >&2
+    echo -e "${CLR_RED}[✗] ERRORE: Questo script deve essere eseguito come root (sudo ./scripts/install-webdav.sh)${CLR_RESET}" >&2
     exit 1
 fi
 
@@ -21,35 +31,56 @@ if [ -f "$ENV_FILE" ]; then
     source "$ENV_FILE"
     set +o allexport
 else
-    echo "[!] ERRORE: File di configurazione .env non trovato in ${ENV_FILE}" >&2
-    echo "    Copia .env.example in .env e definisci MOUNT_CRYPTO prima di installare." >&2
+    echo -e "${CLR_RED}[✗] ERRORE: File di configurazione .env non trovato in ${ENV_FILE}${CLR_RESET}" >&2
+    echo -e "${CLR_YELLOW}    Copia .env.example in .env e definisci i tuoi parametri prima di installare.${CLR_RESET}" >&2
     exit 1
 fi
 
 if [ -z "${MOUNT_CRYPTO:-}" ]; then
-    echo "[!] ERRORE: La variabile MOUNT_CRYPTO non è definita nel file .env!" >&2
+    echo -e "${CLR_RED}[✗] ERRORE: La variabile MOUNT_CRYPTO non è definita nel file .env!${CLR_RESET}" >&2
     exit 1
 fi
 
 WEBDAV_PORT="${WEBDAV_PORT:-9088}"
-
-# Persistent WebDAV scope directory (configurable in .env, default /srv/webdav)
 WEBDAV_SCOPE="${WEBDAV_SCOPE:-/srv/webdav}"
+STORAGE_GROUP="${STORAGE_GROUP:-storage}"
+STORAGE_PERMS="${STORAGE_PERMS:-2775}"
+
+# Detect real invoking non-root user (no hardcoding)
+REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || echo "$USER")}"
 
 if [ ! -f "$YAML_TEMPLATE_FILE" ]; then
-    echo "[!] ERRORE: Template YAML non trovato in ${YAML_TEMPLATE_FILE}" >&2
+    echo -e "${CLR_RED}[✗] ERRORE: Template YAML non trovato in ${YAML_TEMPLATE_FILE}${CLR_RESET}" >&2
     exit 1
 fi
 
 if [ ! -f "$SERVICE_TEMPLATE_FILE" ]; then
-    echo "[!] ERRORE: Template Service non trovato in ${SERVICE_TEMPLATE_FILE}" >&2
+    echo -e "${CLR_RED}[✗] ERRORE: Template Service non trovato in ${SERVICE_TEMPLATE_FILE}${CLR_RESET}" >&2
     exit 1
 fi
 
-echo "=== LUKS MANAGER: INSTALLAZIONE SERVER WEBDAV ==="
+echo -e "${CLR_BCYAN}=== LUKS MANAGER: INSTALLAZIONE SERVER WEBDAV ===${CLR_RESET}"
 
-# 1. DOWNLOAD & INSTALL BINARY
-echo "[1/4] Download del binario standalone WebDAV per Linux ARM64..."
+# 1. GROUP & PERMISSION SETUP (NO 777, SHARED STORAGE GROUP)
+echo -e "\n${CLR_CYAN}[1/5] Configurazione gruppo permessi di sistema '${CLR_WHITE}${STORAGE_GROUP}${CLR_CYAN}'...${CLR_RESET}"
+if ! getent group "$STORAGE_GROUP" >/dev/null 2>&1; then
+    groupadd -r "$STORAGE_GROUP" 2>/dev/null || groupadd "$STORAGE_GROUP"
+    echo -e "  ${CLR_GREEN}[✓] Gruppo di sistema '${STORAGE_GROUP}' creato.${CLR_RESET}"
+else
+    echo -e "  ${CLR_CYAN}[*] Gruppo '${STORAGE_GROUP}' già esistente.${CLR_RESET}"
+fi
+
+if [ -n "$REAL_USER" ] && [ "$REAL_USER" != "root" ]; then
+    usermod -aG "$STORAGE_GROUP" "$REAL_USER" 2>/dev/null || true
+    echo -e "  ${CLR_GREEN}[✓] Utente reale '${REAL_USER}' aggiunto al gruppo '${STORAGE_GROUP}'.${CLR_RESET}"
+fi
+
+mkdir -p "$WEBDAV_SCOPE"
+chgrp "$STORAGE_GROUP" "$WEBDAV_SCOPE" 2>/dev/null || true
+chmod "$STORAGE_PERMS" "$WEBDAV_SCOPE" 2>/dev/null || true
+
+# 2. DOWNLOAD & INSTALL BINARY
+echo -e "\n${CLR_CYAN}[2/5] Download del binario standalone WebDAV per Linux ARM64...${CLR_RESET}"
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -58,10 +89,10 @@ tar -xzf "${TMP_DIR}/webdav.tar.gz" -C "$TMP_DIR"
 
 mv "${TMP_DIR}/webdav" /usr/local/bin/webdav
 chmod +x /usr/local/bin/webdav
-echo "[✓] Binario installato con successo in /usr/local/bin/webdav"
+echo -e "  ${CLR_GREEN}[✓] Binario installato con successo in /usr/local/bin/webdav${CLR_RESET}"
 
-# 2. PROMPT FOR USER CREDENTIALS
-echo -e "\n[2/4] Configurazione utente WebDAV (Porta ${WEBDAV_PORT})..."
+# 3. PROMPT FOR WEBDAV CREDENTIALS
+echo -e "\n${CLR_CYAN}[3/5] Configurazione credenziali WebDAV (Porta ${CLR_WHITE}${WEBDAV_PORT}${CLR_CYAN})...${CLR_RESET}"
 read -p "Inserisci nome utente WebDAV [admin]: " WEBDAV_USER
 WEBDAV_USER="${WEBDAV_USER:-admin}"
 
@@ -85,24 +116,25 @@ else
     WEBDAV_PASSWORD_HASH="${RAW_HASH}"
 fi
 
-# 3. POPULATE CONFIG FILE FROM TEMPLATE
-echo "[3/4] Generazione /etc/webdav/config.yaml dal template (Scope: ${WEBDAV_SCOPE})..."
+# 4. POPULATE CONFIG FILE FROM TEMPLATE
+echo -e "\n${CLR_CYAN}[4/5] Generazione /etc/webdav/config.yaml (Scope: ${CLR_WHITE}${WEBDAV_SCOPE}${CLR_CYAN})...${CLR_RESET}"
 mkdir -p /etc/webdav
-mkdir -p "$WEBDAV_SCOPE"
 
 export WEBDAV_USER WEBDAV_PASSWORD_HASH WEBDAV_SCOPE WEBDAV_PORT
 envsubst '$WEBDAV_USER $WEBDAV_PASSWORD_HASH $WEBDAV_SCOPE $WEBDAV_PORT' < "$YAML_TEMPLATE_FILE" > /etc/webdav/config.yaml
 
-chmod 600 /etc/webdav/config.yaml
-echo "[✓] Configurazione applicata in /etc/webdav/config.yaml"
+chgrp "$STORAGE_GROUP" /etc/webdav/config.yaml 2>/dev/null || true
+chmod 640 /etc/webdav/config.yaml
+echo -e "  ${CLR_GREEN}[✓] Configurazione applicata in /etc/webdav/config.yaml${CLR_RESET}"
 
-# 4. INSTANTIATE SYSTEMD SERVICE FROM TEMPLATE
-echo "[4/4] Copia del servizio systemd da config/webdav.service.template..."
+# 5. INSTANTIATE SYSTEMD SERVICE FROM TEMPLATE
+echo -e "\n${CLR_CYAN}[5/5] Registrazione servizio systemd (webdav.service)...${CLR_RESET}"
 cp "$SERVICE_TEMPLATE_FILE" /etc/systemd/system/webdav.service
 
 systemctl daemon-reload
-echo "[✓] Servizio systemd registrato con successo!"
+echo -e "  ${CLR_GREEN}[✓] Servizio systemd registrato con successo!${CLR_RESET}"
 
-echo -e "\n=== INSTALLAZIONE COMPLETATA CON SUCCESSO! ==="
-echo "Il server WebDAV è pronto sulla porta ${WEBDAV_PORT} esponendo le sole cartelle montate in '${WEBDAV_SCOPE}'."
-echo "Verrà avviato automaticamente da luks-manager.sh quando il disco viene montato."
+echo -e "\n${CLR_GREEN}=== INSTALLAZIONE COMPLETATA CON SUCCESSO! ===${CLR_RESET}"
+echo -e "Il server WebDAV è pronto sulla porta ${CLR_WHITE}${WEBDAV_PORT}${CLR_RESET} esponendo le sole cartelle montate in '${CLR_WHITE}${WEBDAV_SCOPE}${CLR_RESET}'."
+echo -e "I permessi di scrittura sono protetti tramite il gruppo '${CLR_WHITE}${STORAGE_GROUP}${CLR_RESET}' (SGID ${STORAGE_PERMS})."
+echo -e "Verrà avviato automaticamente da ${CLR_BOLD}luks-manager.sh${CLR_RESET} quando il disco viene montato."

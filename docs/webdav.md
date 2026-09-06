@@ -148,18 +148,22 @@ Restart-Service WebClient
 
 ---
 
-## 🔄 LUKS Manager Integration
+## 🔄 LUKS Manager Integration & Group Permissions
 
 In your `.env` file, set:
 
 ```env
-RELOAD_SAMBA=false
 ENABLE_WEBDAV=true
+WEBDAV_PORT=9088
+STORAGE_GROUP="storage"
+STORAGE_PERMS="2775"
+RELOAD_SAMBA=false
 ```
 
-When `luks-manager.sh` executes:
-1. LUKS volume is decrypted and mounted to `/mnt/crypto_data`.
-2. Kernel bind-mounts `/mnt/crypto_data` to `/srv/webdav/crypto_data`.
-3. Script runs `systemctl restart webdav`.
-4. WebDAV serves strictly the mounted volume folders across your network.
-5. On teardown, script unmounts bind-mounts and runs `systemctl stop webdav` before drive unmount and 220V power cutoff.
+### Clean Permission Model (No `chmod 777`):
+1. The installer automatically creates a shared system group (`storage`) and adds your local user (`$SUDO_USER`) to it.
+2. When `luks-manager.sh` mounts the decrypted filesystem to `/mnt/crypto_data` and bind-mounts it to `/srv/webdav/crypto_data`:
+   - It sets group ownership to `STORAGE_GROUP` (`chgrp storage`).
+   - It applies directory permissions with the **SGID bit** (`chmod 2775`), ensuring all newly created files and folders automatically inherit group write access.
+3. WebDAV serves strictly the mounted volume folders across your network with full read and write capabilities.
+4. On teardown, the script cleanly unmounts bind-mounts and stops `webdav.service` before unmounting the filesystem and initiating physical drive spindown.
