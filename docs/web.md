@@ -10,7 +10,7 @@ The Web Dashboard runs as a lightweight, zero-dependency Python service that bri
 
 ```mermaid
 flowchart LR
-    Browser["Desktop Browser<br/><i>(Chrome / Firefox / Safari)</i>"]
+    Browser["Desktop Browser<br/><i>(Web Crypto API in RAM)</i>"]
     Traefik["Reverse Proxy / TLS<br/><code>https://storage.rpi.lan</code>"]
     Web["<b>LUKS Web Service</b><br/><code>web/server.py (:9099)</code>"]
     Socket[("<b>UNIX Domain Socket</b><br/><code>/run/luks-manager.sock</code>")]
@@ -23,9 +23,9 @@ flowchart LR
 ```
 
 ### Security Features:
+- **100% Client-Side Steganography**: Key generation, encryption, and extraction are performed in browser memory via the **Web Crypto API**. Raw photos are never uploaded or stored on the server during creation.
 - **Zero Key Persistence**: Passphrases and uploaded keyfiles are held temporarily in client and server RAM and piped directly into kernel memory (`dm-crypt`).
 - **HTTP Security Headers**: Native enforcement of `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and `Cache-Control: no-store`.
-- **Payload Limit**: Strict 10MB upload ceiling to prevent memory denial-of-service.
 
 ---
 
@@ -72,11 +72,9 @@ http:
 
 ---
 
-## 🔑 Using the Dashboard
+## 🔑 Dashboard Features & Unlock Modes
 
-1. Navigate to `http://<RPI_IP>:9099` or your Traefik HTTPS URL.
-2. Choose your preferred unlock method:
-   - **Passphrase**: Type your LUKS master passphrase.
-   - **Keyfile**: Drag and drop your `.key`, `.bin`, or stego-embedded image.
-3. Click **🔑 Sblocca Storage**. The system will power on the smart plug, detect the USB drive, activate LVM, decrypt LUKS into RAM, mount the filesystems, and start WebDAV.
-4. When finished, click **🛑 Espelli & Spegni 220V** to perform safe unmounting, SCSI head parking, and smart plug cutoff.
+1. **🔒 Passphrase**: Standard password prompt for manual unlocking.
+2. **📄 Keyfile (.key)**: Direct drag & drop of a 512-byte binary keyfile.
+3. **🖼️ Foto Stenografica**: Drag & drop any steganographic photo with an optional secondary password. The browser extracts the key in RAM using PBKDF2/HMAC and submits only the decrypted key bytes.
+4. **🎨 Stego Key Studio**: Built-in visual tool in the top header to generate 4096-bit CSPRNG keys, embed them into any photo, and download both `vault.key` and `stego_image.jpg` completely client-side.

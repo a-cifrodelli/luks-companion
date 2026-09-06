@@ -18,7 +18,10 @@
       </div>
     </div>
 
-    <div class="header-status">
+    <div class="header-actions">
+      <button class="btn btn-outline" onclick="openStegoStudioModal()">
+        🎨 Stego Key Studio
+      </button>
       <div id="masterStatusBadge" class="badge badge-red">
         <span class="badge-dot"></span>
         <span id="masterStatusText">IN ATTESA</span>
@@ -71,28 +74,45 @@
     <!-- Action Area -->
     <div class="action-panel">
 
-      <!-- Sblocco (Passphrase o Keyfile) -->
+      <!-- Sblocco: 3 Metodi Affiancati -->
       <div class="auth-box">
         <div class="tabs">
-          <button id="tabPassphrase" class="tab-btn active" onclick="setTab('passphrase')">Passphrase</button>
-          <button id="tabKeyfile" class="tab-btn" onclick="setTab('keyfile')">File Chiave (Keyfile / Immagine)</button>
+          <button id="tabPassphrase" class="tab-btn active" onclick="setTab('passphrase')">🔒 Passphrase</button>
+          <button id="tabKeyfile" class="tab-btn" onclick="setTab('keyfile')">📄 Keyfile (.key)</button>
+          <button id="tabStego" class="tab-btn" onclick="setTab('stego')">🖼️ Foto Stenografica</button>
         </div>
 
-        <!-- Tab 1: Passphrase -->
+        <!-- Metodo 1: Passphrase -->
         <div id="secPassphrase" class="input-group">
           <label for="inputPassphrase">Inserisci Passphrase LUKS:</label>
           <input type="password" id="inputPassphrase" class="input-text" placeholder="••••••••••••••••" autocomplete="current-password" />
         </div>
 
-        <!-- Tab 2: Keyfile Drag & Drop -->
+        <!-- Metodo 2: Keyfile Diretto -->
         <div id="secKeyfile" class="input-group" style="display: none;">
-          <label>Carica o trascina la chiave (.key / .bin / immagine stego):</label>
+          <label>Carica file chiave binario puro (.key / .bin):</label>
           <div id="keyfileDropzone" class="dropzone">
             <div class="dropzone-icon">📄</div>
             <div class="dropzone-text">Trascina qui il file chiave oppure <strong>clicca per sfogliare</strong></div>
             <div id="keyfileSelectedText" class="file-selected" style="display: none;"></div>
           </div>
           <input type="file" id="keyfileInput" style="display: none;" />
+        </div>
+
+        <!-- Metodo 3: Immagine Stenografica -->
+        <div id="secStego" class="input-group" style="display: none;">
+          <label>Carica la foto contenente la chiave steganografica:</label>
+          <div id="stegoDropzone" class="dropzone">
+            <div class="dropzone-icon">🖼️</div>
+            <div class="dropzone-text">Trascina qui l'immagine (JPG / PNG) oppure <strong>clicca per sfogliare</strong></div>
+            <div id="stegoSelectedText" class="file-selected" style="display: none;"></div>
+          </div>
+          <input type="file" id="stegoInput" accept="image/*" style="display: none;" />
+
+          <div style="margin-top: 0.75rem;">
+            <label for="inputStegoPass">Password Stenografia (opzionale, se protetta):</label>
+            <input type="password" id="inputStegoPass" class="input-text" placeholder="Lascia vuoto se non protetta da password" />
+          </div>
         </div>
 
         <button id="btnUnlock" class="btn btn-primary" onclick="performUnlock()">
@@ -105,7 +125,7 @@
         <div class="controls-info">
           <h3>Arresto & Cutoff 220V</h3>
           <p>
-            Esegue l'arresto controllato di WebDAV, smonta i filesystem, distrugge la chiave in RAM, disattiva LVM, parcheggia le testine SCSI ed interrompe l'alimentazione smart plug a 0W.
+            Ferma WebDAV, smonta i filesystem, cancella la chiave da RAM, disattiva LVM, parcheggia le testine SCSI ed interrompe l'alimentazione 220V (0W).
           </p>
         </div>
 
@@ -122,6 +142,75 @@
       <div id="consoleOutput" class="console-log"></div>
     </div>
 
+  </div>
+
+  <!-- Stego Key Studio Modal (Encrypt & Embed Tool in Client RAM) -->
+  <div id="stegoStudioModal" class="modal-overlay">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h3>🎨 Stego Key Studio — Generatore Chiavi & Embedding</h3>
+        <button class="btn-close" onclick="closeStegoStudioModal()">✕</button>
+      </div>
+
+      <div class="studio-body">
+        <p class="modal-desc">
+          Crea una chiave crittografica LUKS casuale ad altissima entropia (512 byte) e nascondila dentro una qualsiasi immagine. <strong>Tutto il processo avviene al 100% in memoria RAM nel tuo browser (Web Crypto API)</strong> senza inviare nulla al server.
+        </p>
+
+        <div class="studio-grid">
+          <!-- Step 1: Immagine di Copertina -->
+          <div class="studio-card">
+            <div class="studio-step-num">1</div>
+            <h4>Immagine di Copertina</h4>
+            <p>Seleziona una normale foto (JPG, PNG, WebP):</p>
+            <div id="studioCoverDropzone" class="dropzone dropzone-sm">
+              <div class="dropzone-text">Trascina foto o <strong>clicca</strong></div>
+              <div id="studioCoverSelectedText" class="file-selected" style="display: none;"></div>
+            </div>
+            <input type="file" id="studioCoverInput" accept="image/*" style="display: none;" />
+          </div>
+
+          <!-- Step 2: Generazione Chiave -->
+          <div class="studio-card">
+            <div class="studio-step-num">2</div>
+            <h4>Chiave di Cifratura</h4>
+            <p>Generazione automatica 512 byte CSPRNG:</p>
+            <button class="btn btn-outline btn-sm" onclick="generateNewRandomKey()">
+              🎲 Rigenera Nuova Chiave Casuale
+            </button>
+            <div id="keyGenStatus" class="file-selected" style="margin-top: 0.5rem;">
+              ✓ Chiave CSPRNG 4096-bit pronta in RAM
+            </div>
+          </div>
+
+          <!-- Step 3: Password Stenografica Opzionale -->
+          <div class="studio-card">
+            <div class="studio-step-num">3</div>
+            <h4>Protezione Immagine</h4>
+            <p>Password stenografia aggiuntiva (opzionale):</p>
+            <input type="password" id="studioStegoPassword" class="input-text" placeholder="Opzionale (PBKDF2-HMAC-SHA256)" />
+          </div>
+        </div>
+
+        <div class="studio-actions">
+          <button id="btnGenerateStego" class="btn btn-primary" onclick="buildAndDownloadStegoImage()">
+            📦 Crea & Scarica Immagine Steganografica
+          </button>
+        </div>
+
+        <div id="studioResultBox" class="studio-results" style="display: none;">
+          <h4>✓ Immagine Creata con Successo!</h4>
+          <p>Per completare la configurazione, registra la chiave generata su LUKS con il comando:</p>
+          <pre id="luksAddKeyCmd" class="code-box"></pre>
+          <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+            <button class="btn btn-sm btn-outline" onclick="downloadRawKeyfile()">
+              ⬇️ Scarica anche il file grezzo vault.key
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
   </div>
 
   <!-- Stop Confirmation Modal -->
