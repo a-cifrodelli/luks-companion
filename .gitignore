@@ -11,6 +11,10 @@ config.env
 scratch/
 tmp/
 
+# Python
+__pycache__/
+*.py[cod]
+
 # OS and Editor specific files
 .DS_Store
 Thumbs.db
