@@ -26,6 +26,48 @@ function logConsole(msg) {
 }
 
 // -------------------------------------------------------------------
+// 0. MODERN TOAST NOTIFICATIONS (Replaces browser alert())
+// -------------------------------------------------------------------
+function showToast(title, message, type = "info", duration = 5000) {
+    let container = document.getElementById("toastContainer");
+    if (!container) {
+        container = document.createElement("div");
+        container.id = "toastContainer";
+        document.body.appendChild(container);
+    }
+
+    const toast = document.createElement("div");
+    toast.className = `toast toast-${type}`;
+
+    const icons = {
+        success: "✓",
+        error: "✕",
+        warning: "⚠",
+        info: "ℹ"
+    };
+
+    toast.innerHTML = `
+        <div class="toast-icon">${icons[type] || "ℹ"}</div>
+        <div class="toast-content">
+            ${title ? `<div class="toast-title">${title}</div>` : ""}
+            <div>${message}</div>
+        </div>
+        <button class="toast-close" onclick="this.parentElement.remove()">✕</button>
+    `;
+
+    container.appendChild(toast);
+
+    if (duration > 0) {
+        setTimeout(() => {
+            if (toast.parentElement) {
+                toast.classList.add("toast-out");
+                setTimeout(() => toast.remove(), 200);
+            }
+        }, duration);
+    }
+}
+
+// -------------------------------------------------------------------
 // 1. STATUS POLLING & UI UPDATE
 // -------------------------------------------------------------------
 async function updateStatus() {
@@ -223,7 +265,7 @@ async function performUnlock() {
         if (currentTab === "passphrase") {
             const passphrase = document.getElementById("inputPassphrase").value;
             if (!passphrase) {
-                alert("Inserire la passphrase prima di continuare.");
+                showToast("Attenzione", "Inserire la passphrase prima di continuare.", "warning");
                 unlockBtn.disabled = false;
                 unlockBtn.textContent = "🔑 Sblocca Storage";
                 return;
@@ -233,7 +275,7 @@ async function performUnlock() {
 
         } else if (currentTab === "keyfile") {
             if (!selectedKeyfileBase64) {
-                alert("Selezionare o trascinare un file chiave (.key/.bin) valido.");
+                showToast("Attenzione", "Selezionare o trascinare un file chiave (.key/.bin) valido.", "warning");
                 unlockBtn.disabled = false;
                 unlockBtn.textContent = "🔑 Sblocca Storage";
                 return;
@@ -243,7 +285,7 @@ async function performUnlock() {
 
         } else if (currentTab === "stego") {
             if (!selectedStegoImageBytes) {
-                alert("Selezionare o trascinare una foto stenografica valida.");
+                showToast("Attenzione", "Selezionare o trascinare una foto stenografica valida.", "warning");
                 unlockBtn.disabled = false;
                 unlockBtn.textContent = "🔑 Sblocca Storage";
                 return;
@@ -268,6 +310,7 @@ async function performUnlock() {
         if (json.status === "ok") {
             logConsole(`[SUCCESSO] ${json.message}`);
             if (json.output) logConsole(json.output);
+            showToast("Volume Sbloccato", json.message || "Storage montato e pronto all'uso!", "success");
             
             // Clear sensitive input
             document.getElementById("inputPassphrase").value = "";
@@ -278,11 +321,11 @@ async function performUnlock() {
             document.getElementById("stegoSelectedText").style.display = "none";
         } else {
             logConsole(`[ERRORE] ${json.message || 'Sblocco fallito'}`);
-            alert(`Errore sblocco: ${json.message}`);
+            showToast("Errore Sblocco", json.message || "Impossibile sbloccare il container LUKS", "error");
         }
     } catch (err) {
         logConsole(`[ERRORE] ${err.message}`);
-        alert(`Errore: ${err.message}`);
+        showToast("Errore", err.message, "error");
     } finally {
         unlockBtn.textContent = "🔑 Sblocca Storage";
         updateStatus();
@@ -325,11 +368,12 @@ function downloadRawKeyfile() {
     if (!studioGeneratedKey) return;
     const blob = new Blob([studioGeneratedKey], { type: "application/octet-stream" });
     downloadBlob(blob, "vault.key");
+    showToast("Download Chiave", "File vault.key scaricato con successo!", "info");
 }
 
 async function buildAndDownloadStegoImage() {
     if (!studioCoverBytes) {
-        alert("Selezionare prima un'immagine di copertina (Step 1).");
+        showToast("Attenzione", "Selezionare prima un'immagine di copertina (Step 1).", "warning");
         return;
     }
     if (!studioGeneratedKey) {
@@ -377,6 +421,7 @@ async function buildAndDownloadStegoImage() {
 
     document.getElementById("studioResultBox").style.display = "block";
     logConsole(`[STUDIO] Immagine steganografica creata e scaricata: ${outputName}`);
+    showToast("Creazione Completata", `Immagine ${outputName} e vault.key generati e scaricati!`, "success");
 }
 
 // -------------------------------------------------------------------
@@ -439,6 +484,7 @@ function loadRawKeyfile(file) {
         txt.textContent = `✓ File caricato: ${selectedKeyfileName} (${bytes.length} bytes)`;
         txt.style.display = "block";
         logConsole(`Keyfile caricato in memoria RAM: ${selectedKeyfileName} (${bytes.length} bytes)`);
+        showToast("Keyfile Caricato", `${selectedKeyfileName} (${bytes.length} bytes)`, "info");
     };
     reader.readAsArrayBuffer(file);
 }
@@ -452,6 +498,7 @@ function loadStegoImage(file) {
         txt.textContent = `✓ Foto caricata: ${selectedStegoImageName} (${selectedStegoImageBytes.length} bytes)`;
         txt.style.display = "block";
         logConsole(`Foto stenografica caricata in RAM: ${selectedStegoImageName}`);
+        showToast("Foto Caricata", `${selectedStegoImageName}`, "info");
     };
     reader.readAsArrayBuffer(file);
 }
@@ -498,12 +545,14 @@ async function confirmStop() {
         if (json.status === "ok") {
             logConsole(`[SUCCESSO] ${json.message}`);
             if (json.output) logConsole(json.output);
+            showToast("Arresto Completato", json.message || "Filesystem smontati e alimentazione 220V disattivata.", "success");
         } else {
             logConsole(`[ERRORE] ${json.message}`);
-            alert(`Errore durante l'arresto: ${json.message}`);
+            showToast("Errore Arresto", json.message || "Errore durante l'arresto", "error");
         }
     } catch (err) {
         logConsole(`[ERRORE RETE] ${err.message}`);
+        showToast("Errore di Rete", err.message, "error");
     } finally {
         stopBtn.textContent = "🛑 Espelli & Spegni 220V";
         updateStatus();

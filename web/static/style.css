@@ -521,6 +521,107 @@ header {
   overflow-x: auto;
 }
 
+/* Toast Notifications */
+#toastContainer {
+  position: fixed;
+  top: 1.5rem;
+  right: 1.5rem;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 440px;
+  width: 90%;
+  pointer-events: none;
+}
+
+.toast {
+  background: #131b2e;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border-focus);
+  border-radius: 8px;
+  padding: 0.85rem 1.15rem;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  color: var(--text-primary);
+  pointer-events: auto;
+  animation: toastIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.2s ease;
+}
+
+.toast.toast-out {
+  animation: toastOut 0.2s ease-in forwards;
+}
+
+.toast.toast-error {
+  border-left-color: #ef4444;
+  background: #18141f;
+}
+.toast.toast-error .toast-icon { color: #f87171; }
+
+.toast.toast-success {
+  border-left-color: #10b981;
+  background: #101c24;
+}
+.toast.toast-success .toast-icon { color: #34d399; }
+
+.toast.toast-warning {
+  border-left-color: #f59e0b;
+  background: #1c1a17;
+}
+.toast.toast-warning .toast-icon { color: #fbbf24; }
+
+.toast.toast-info {
+  border-left-color: #38bdf8;
+  background: #0e192c;
+}
+.toast.toast-info .toast-icon { color: #38bdf8; }
+
+.toast-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.toast-content {
+  flex: 1;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.toast-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  margin-bottom: 0.2rem;
+}
+
+.toast-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 0.25rem;
+}
+.toast-close:hover {
+  color: #fff;
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(-15px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes toastOut {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(-15px) scale(0.95); }
+}
+
 /* Footer */
 footer {
   text-align: center;
