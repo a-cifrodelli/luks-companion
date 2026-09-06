@@ -68,30 +68,56 @@ def find_smartctl_bin():
             return cand
     return None
 
-def find_target_block_device(vg_name, target_dev_cfg):
+def find_target_block_device(vg_name, mapper_name, mount_crypto, target_dev_cfg):
     if target_dev_cfg and os.path.exists(target_dev_cfg):
         return target_dev_cfg
-    if vg_name:
+
+    # Priority 1: Trace back from mapper, mountpoint, or VG device node using lsblk -s
+    candidates_to_trace = []
+    if mapper_name and os.path.exists(f"/dev/mapper/{mapper_name}"):
+        candidates_to_trace.append(f"/dev/mapper/{mapper_name}")
+    if mount_crypto and os.path.exists(mount_crypto):
+        candidates_to_trace.append(mount_crypto)
+    if vg_name and os.path.exists(f"/dev/{vg_name}"):
+        candidates_to_trace.append(f"/dev/{vg_name}")
+
+    for cand in candidates_to_trace:
         try:
-            res = subprocess.check_output(
-                ["pvs", "--noheadings", "-o", "pv_name", "-g", vg_name],
+            out = subprocess.check_output(
+                ["lsblk", "-s", "-rno", "PATH,TYPE", cand],
                 stderr=subprocess.DEVNULL, text=True, timeout=2
             ).strip()
-            if res:
-                pv = res.splitlines()[0].strip()
-                try:
-                    parent = subprocess.check_output(
-                        ["lsblk", "-no", "PKNAME", pv],
-                        stderr=subprocess.DEVNULL, text=True, timeout=2
-                    ).strip()
-                    if parent and os.path.exists(f"/dev/{parent}"):
-                        return f"/dev/{parent}"
-                except Exception:
-                    pass
-                if os.path.exists(pv):
-                    return pv
+            for line in out.splitlines():
+                parts = line.strip().split()
+                if len(parts) >= 2 and parts[1].lower() == "disk" and os.path.exists(parts[0]):
+                    return parts[0]
         except Exception:
             pass
+
+    # Priority 2: Query LVM physical volumes directly
+    try:
+        out = subprocess.check_output(
+            ["pvs", "--noheadings", "-o", "pv_name"],
+            stderr=subprocess.DEVNULL, text=True, timeout=2
+        ).strip()
+        for pv in out.splitlines():
+            pv = pv.strip()
+            if pv and os.path.exists(pv):
+                try:
+                    pout = subprocess.check_output(
+                        ["lsblk", "-s", "-rno", "PATH,TYPE", pv],
+                        stderr=subprocess.DEVNULL, text=True, timeout=2
+                    ).strip()
+                    for line in pout.splitlines():
+                        parts = line.strip().split()
+                        if len(parts) >= 2 and parts[1].lower() == "disk" and os.path.exists(parts[0]):
+                            return parts[0]
+                except Exception:
+                    pass
+                return pv
+    except Exception:
+        pass
+
     return None
 
 def get_smart_data(target_dev):
@@ -101,41 +127,52 @@ def get_smart_data(target_dev):
     if not target_dev or not os.path.exists(target_dev):
         return {"supported": False, "installed": True, "device": None, "reason": "Disco spento / inerte (0W Standby)"}
 
-    try:
-        out = subprocess.check_output(
-            [smartctl, "-j", "-i", "-H", "-A", target_dev],
-            stderr=subprocess.DEVNULL, text=True, timeout=3
-        )
-        data = json.loads(out)
-        
-        health = "UNKNOWN"
-        smart_status = data.get("smart_status", {})
-        if "passed" in smart_status:
-            health = "PASSED" if smart_status["passed"] else "FAILED"
-        
-        temp = None
-        if "temperature" in data and "current" in data["temperature"]:
-            temp = data["temperature"]["current"]
-        elif "ata_smart_attributes" in data and "table" in data["ata_smart_attributes"]:
-            for attr in data["ata_smart_attributes"]["table"]:
-                if attr.get("name") in ["Temperature_Celsius", "Airflow_Temperature_Cel"]:
-                    temp = attr.get("raw", {}).get("value")
-                    break
+    # Try standard probe first, then SAT (SCSI to ATA Translation) fallback
+    raw_data = None
+    for cmd in [
+        [smartctl, "-j", "-i", "-H", "-A", target_dev],
+        [smartctl, "-d", "sat", "-j", "-i", "-H", "-A", target_dev],
+        [smartctl, "-d", "auto", "-j", "-i", "-H", "-A", target_dev]
+    ]:
+        try:
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=3)
+            if res.stdout and ("smart_status" in res.stdout or "device" in res.stdout or "model_name" in res.stdout):
+                raw_data = json.loads(res.stdout)
+                break
+        except Exception:
+            continue
 
-        model = data.get("model_name") or data.get("device", {}).get("model_name") or data.get("model_family") or "USB Drive"
-        serial = data.get("serial_number", "")
+    if not raw_data:
+        return {"supported": False, "installed": True, "device": target_dev, "reason": "S.M.A.R.T. non esposto dal bridge USB"}
 
-        return {
-            "supported": True,
-            "installed": True,
-            "device": target_dev,
-            "health": health,
-            "temperature_c": temp,
-            "model": model,
-            "serial": serial
-        }
-    except Exception:
-        return {"supported": False, "installed": True, "device": target_dev, "reason": "S.M.A.R.T. non disponibile per questo bridge USB"}
+    health = "UNKNOWN"
+    smart_status = raw_data.get("smart_status", {})
+    if "passed" in smart_status:
+        health = "PASSED" if smart_status["passed"] else "FAILED"
+
+    temp = None
+    if "temperature" in raw_data and "current" in raw_data["temperature"]:
+        temp = raw_data["temperature"]["current"]
+    elif "ata_smart_attributes" in raw_data and "table" in raw_data["ata_smart_attributes"]:
+        for attr in raw_data["ata_smart_attributes"]["table"]:
+            if attr.get("name") in ["Temperature_Celsius", "Airflow_Temperature_Cel", "Temperature"]:
+                temp = attr.get("raw", {}).get("value")
+                break
+    elif "nvme_smart_health_information_log" in raw_data and "temperature" in raw_data["nvme_smart_health_information_log"]:
+        temp = raw_data["nvme_smart_health_information_log"]["temperature"]
+
+    model = raw_data.get("model_name") or raw_data.get("device", {}).get("model_name") or raw_data.get("model_family") or "USB Drive"
+    serial = raw_data.get("serial_number", "")
+
+    return {
+        "supported": True,
+        "installed": True,
+        "device": target_dev,
+        "health": health,
+        "temperature_c": temp,
+        "model": model,
+        "serial": serial
+    }
 
 def get_status():
     env = load_env()
@@ -170,7 +207,7 @@ def get_status():
             volumes.append(v_backup)
 
     # S.M.A.R.T. Telemetry
-    target_dev = find_target_block_device(vg_name, target_dev_cfg) if (vg_active or is_unlocked) else None
+    target_dev = find_target_block_device(vg_name, mapper_name, mount_crypto, target_dev_cfg) if (vg_active or is_unlocked or is_mounted) else None
     smart_info = get_smart_data(target_dev)
 
     return {
