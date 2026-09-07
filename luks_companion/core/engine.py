@@ -48,23 +48,11 @@ class StorageEngine:
         else:
             print(msg, flush=True)
 
-    def notify_discord(self, event: str, message: str = "") -> None:
+    def notify_discord(self, event: str, message: str = "") -> bool:
         if not self.config.discord_webhook_url:
-            return
-        try:
-            from .notify import send_discord_notification
-            send_discord_notification(self.config, event, message)
-        except Exception:
-            # Fallback to external script if present
-            notify_script = os.path.join(self.config.base_dir, "scripts", "notify-discord.py")
-            if os.path.exists(notify_script):
-                try:
-                    self.runner.run(
-                        [sys.executable, notify_script, event, message],
-                        timeout=10.0,
-                    )
-                except Exception:
-                    pass
+            return False
+        from .notify import send_discord_notification
+        return send_discord_notification(self.config, event, message)
 
     # -------------------------------------------------------------------
     # HARDWARE & BLOCK DEVICE DISCOVERY

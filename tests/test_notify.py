@@ -77,3 +77,33 @@ def test_engine_safe_teardown_triggers_lock_notification(mock_config, mock_runne
         engine.safe_teardown()
         mock_notify.assert_called_once()
         assert mock_notify.call_args[0][0] == "lock"
+
+
+def test_engine_notify_discord_direct_delegation(mock_config, mock_runner, mock_ha):
+    mock_config.discord_webhook_url = "https://discord.com/api/webhooks/mock/test"
+    engine = StorageEngine(mock_config, runner=mock_runner, ha_client=mock_ha)
+
+    with patch("luks_companion.core.notify.send_discord_notification", return_value=True) as mock_send:
+        res = engine.notify_discord("test", "hello")
+        assert res is True
+        mock_send.assert_called_once_with(mock_config, "test", "hello")
+
+
+def test_notify_discord_http_error(capsys):
+    import io
+    import urllib.error
+    cfg = Config(discord_webhook_url="https://discord.com/api/webhooks/mock/test")
+
+    err = urllib.error.HTTPError(
+        url="https://discord.com",
+        code=400,
+        msg="Bad Request",
+        hdrs={},
+        fp=io.BytesIO(b'{"message": "Invalid Webhook"}'),
+    )
+    with patch("urllib.request.urlopen", side_effect=err):
+        success = send_discord_notification(cfg, "test")
+        assert success is False
+        captured = capsys.readouterr()
+        assert "HTTP 400" in captured.err
+        assert "Invalid Webhook" in captured.err

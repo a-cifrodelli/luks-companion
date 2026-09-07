@@ -97,6 +97,14 @@ def send_discord_notification(config, event: str = "test", custom_msg: str = "")
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             return resp.getcode() in (200, 204)
+    except urllib.error.HTTPError as e:
+        err_detail = ""
+        try:
+            err_detail = f" - {e.read().decode('utf-8', errors='replace')}"
+        except Exception:
+            pass
+        print(f"[!] Invio notifica Discord ({event}) fallito (HTTP {e.code}{err_detail})", file=sys.stderr)
+        return False
     except Exception as e:
-        print(f"['!] Invio notifica Discord ({event}) fallito: {e}", file=sys.stderr)
+        print(f"[!] Invio notifica Discord ({event}) fallito: {e}", file=sys.stderr)
         return False
