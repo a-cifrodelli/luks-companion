@@ -3,404 +3,329 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LUKS Companion - Flowchart Ciclo di Vita Completo</title>
+  <title>LUKS Companion - Flowchart Grafico Interattivo</title>
+  <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
   <style>
-    :root {
-      --bg: #0b0f19;
-      --card-bg: #111827;
-      --border: #1f2937;
-      --primary: #38bdf8;
-      --success: #10b981;
-      --warn: #f59e0b;
-      --danger: #ef4444;
-      --orange: #f97316;
-      --purple: #818cf8;
-      --text: #f8fafc;
-      --text-muted: #94a3b8;
-    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: var(--bg);
-      color: var(--text);
+      background: #0b0f19;
+      color: #f8fafc;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      padding: 2rem;
-      overflow-y: auto;
-      line-height: 1.5;
-    }
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-    }
-    header {
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 1.5rem;
-      margin-bottom: 2rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 1rem;
-    }
-    h1 { font-size: 1.75rem; color: var(--primary); }
-    .badge {
-      padding: 0.35rem 0.85rem;
-      border-radius: 9999px;
-      font-size: 0.85rem;
-      font-weight: 600;
-      background: rgba(56, 189, 248, 0.15);
-      color: var(--primary);
-      border: 1px solid rgba(56, 189, 248, 0.3);
-    }
-    
-    .section-title {
-      font-size: 1.25rem;
-      font-weight: 700;
-      margin: 2rem 0 1rem 0;
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
-
-    /* Grid & Cards */
-    .flow-tree {
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
       display: flex;
       flex-direction: column;
-      gap: 1rem;
-      position: relative;
     }
-
-    .flow-step {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 0.75rem;
-      padding: 1.25rem 1.5rem;
-      position: relative;
-      transition: all 0.2s ease;
-    }
-    .flow-step:hover {
-      border-color: #334155;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-    }
-
-    .step-header {
+    header {
+      background: #111827;
+      border-bottom: 1px solid #1f2937;
+      padding: 0.75rem 1.5rem;
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      margin-bottom: 0.75rem;
-    }
-    .step-number {
-      display: inline-flex;
       align-items: center;
-      justify-content: center;
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
+      z-index: 100;
+    }
+    .header-title h1 {
+      font-size: 1.15rem;
       font-weight: 700;
-      font-size: 0.85rem;
-    }
-    .step-title {
-      font-size: 1.05rem;
-      font-weight: 600;
-      color: #fff;
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-    }
-
-    .branches {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 1rem;
-      margin-top: 1rem;
-    }
-    .branch-card {
-      background: rgba(15, 23, 42, 0.6);
-      border: 1px solid rgba(255,255,255,0.06);
-      border-radius: 0.5rem;
-      padding: 1rem;
-    }
-    .branch-card.success { border-left: 4px solid var(--success); }
-    .branch-card.error { border-left: 4px solid var(--danger); }
-    .branch-card.warn { border-left: 4px solid var(--warn); }
-    .branch-card.action { border-left: 4px solid var(--primary); }
-    .branch-card.teardown { border-left: 4px solid var(--orange); }
-
-    .branch-title {
-      font-weight: 600;
-      font-size: 0.9rem;
-      margin-bottom: 0.35rem;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-    }
-    .branch-desc {
-      font-size: 0.83rem;
-      color: var(--text-muted);
-    }
-    code {
-      background: rgba(0,0,0,0.3);
-      padding: 0.15rem 0.4rem;
-      border-radius: 4px;
-      font-family: monospace;
-      font-size: 0.82rem;
       color: #38bdf8;
     }
-
-    .arrow-down {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      color: var(--primary);
-      font-size: 1.5rem;
-      margin: 0.25rem 0;
-      opacity: 0.6;
+    .header-title span {
+      font-size: 0.8rem;
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 0.2rem 0.6rem;
+      border-radius: 9999px;
+      font-weight: 600;
     }
-
-    .teardown-box {
-      background: rgba(67, 20, 7, 0.15);
-      border: 1px solid rgba(249, 115, 22, 0.3);
-      border-radius: 0.75rem;
-      padding: 1.5rem;
-      margin-top: 2rem;
+    .controls {
+      display: flex;
+      gap: 0.5rem;
     }
-    .teardown-box h2 {
-      color: var(--orange);
-      font-size: 1.25rem;
-      margin-bottom: 1rem;
+    button {
+      background: #1e293b;
+      color: #f1f5f9;
+      border: 1px solid #334155;
+      padding: 0.45rem 0.85rem;
+      border-radius: 0.375rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    button:hover {
+      background: #334155;
+      border-color: #38bdf8;
+      color: #38bdf8;
+    }
+    #network {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle at center, #1e293b 0%, #0b0f19 100%);
+    }
+    .legend {
+      position: absolute;
+      bottom: 1.5rem;
+      left: 1.5rem;
+      background: rgba(17, 24, 39, 0.9);
+      backdrop-filter: blur(8px);
+      border: 1px solid #374151;
+      border-radius: 0.5rem;
+      padding: 0.75rem 1rem;
+      font-size: 0.78rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      z-index: 50;
+      pointer-events: none;
+    }
+    .legend-item {
       display: flex;
       align-items: center;
-      gap: 0.6rem;
+      gap: 0.5rem;
+    }
+    .legend-box {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+    }
+    .hint {
+      position: absolute;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      background: rgba(17, 24, 39, 0.9);
+      border: 1px solid #374151;
+      border-radius: 0.5rem;
+      padding: 0.5rem 0.85rem;
+      font-size: 0.78rem;
+      color: #94a3b8;
+      z-index: 50;
+      pointer-events: none;
     }
   </style>
 </head>
 <body>
 
-<div class="container">
   <header>
-    <div>
-      <h1>LUKS Manager - Architecture & Lifecycle Flowchart</h1>
-      <p style="color:var(--text-muted); font-size:0.9rem; margin-top:0.25rem;">Rappresentazione visuale dettagliata di tutti i controlli, rami di errore e sequenze atomiche</p>
+    <div class="header-title" style="display:flex; align-items:center; gap:0.75rem;">
+      <h1>LUKS Manager - Flowchart Grafico Interattivo</h1>
+      <span>v2.0 Visual Graph</span>
     </div>
-    <span class="badge">v2.0 Orchestrator</span>
+    <div class="controls">
+      <button onclick="network.fit({animation: {duration: 600}})">📐 Adatta Tutto</button>
+      <button onclick="network.moveTo({scale: network.getScale() * 1.3})">🔍 Zoom +</button>
+      <button onclick="network.moveTo({scale: network.getScale() * 0.7})">🔍 Zoom -</button>
+      <button onclick="network.focus('start', {scale: 1.2, animation: true})">🚀 Inizio</button>
+      <button onclick="network.focus('t_final', {scale: 1.2, animation: true})">🔴 Teardown</button>
+    </div>
   </header>
 
-  <!-- 0. INIZIALIZZAZIONE & LOCKING -->
-  <div class="section-title"><span>🛡️</span> 0. Inizializzazione, Permessi & Locking</div>
-  <div class="flow-tree">
-    <div class="flow-step">
-      <div class="step-header">
-        <span class="step-title"><span class="step-number" style="background:#1e293b; color:#38bdf8;">0</span> Verifica Privilegi Root & Lock Esclusivo</span>
-      </div>
-      <div class="branches">
-        <div class="branch-card warn">
-          <div class="branch-title">Esecuzione Non-Root (UID != 0)</div>
-          <div class="branch-desc">Richiede password con <code>exec sudo "" "$@"</code> e riavvia lo script preservando i parametri CLI.</div>
-        </div>
-        <div class="branch-card error">
-          <div class="branch-title">Lock File Occupato (/run/luks-manager.lock)</div>
-          <div class="branch-desc">Se un'altra istanza è già in esecuzione, <code>flock -n 200</code> fallisce ed esce immediatamente con <code>exit 1</code> per evitare corruzione.</div>
-        </div>
-        <div class="branch-card action">
-          <div class="branch-title">Buffer Sicuro STDIN in RAM</div>
-          <div class="branch-desc">Se lo script riceve la chiave via pipe o socket, la salva subito su file temporaneo in RAM (<code>/dev/shm/luks_key.XXXXXX</code> con permessi 600).</div>
-        </div>
-      </div>
-    </div>
+  <div id="network"></div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-box" style="background:#38bdf8;"></div><span>Avvio / Fine Processo</span></div>
+    <div class="legend-item"><div class="legend-box" style="background:#818cf8;"></div><span>Decisioni & Condizioni (if / else)</span></div>
+    <div class="legend-item"><div class="legend-box" style="background:#1e293b; border:1px solid #64748b;"></div><span>Azioni & Comandi di Sistema</span></div>
+    <div class="legend-item"><div class="legend-box" style="background:#f97316;"></div><span>Sequenza Teardown & Spegnimento</span></div>
+    <div class="legend-item"><div class="legend-box" style="background:#ef4444;"></div><span>Rami di Errore / Abort</span></div>
+    <div class="legend-item"><div class="legend-box" style="background:#10b981;"></div><span>Stato Attivo Operativo</span></div>
   </div>
 
-  <div class="arrow-down">↓</div>
-
-  <!-- 1. DISPATCH COMANDI -->
-  <div class="section-title"><span>🔀</span> 1. Dispatch Comandi</div>
-  <div class="branches" style="margin-top:0;">
-    <div class="branch-card action">
-      <div class="branch-title">Comando: <code>status</code></div>
-      <div class="branch-desc">Interroga HA, Volume Group, LUKS, Mount e WebDAV. Stampa il report in console ed esce con <code>exit 0</code> senza modificare nulla.</div>
-    </div>
-    <div class="branch-card teardown">
-      <div class="branch-title">Comando: <code>stop</code> / <code>lock</code></div>
-      <div class="branch-desc">Salta direttamente alla <strong>Sequenza di Teardown Sicuro</strong> in fondo.</div>
-    </div>
-    <div class="branch-card success">
-      <div class="branch-title">Comando: <code>start</code> / <code>unlock</code></div>
-      <div class="branch-desc">Arma le trap di sicurezza per i segnali (<code>SIGINT</code>, <code>SIGTERM</code>, <code>SIGHUP</code>) e procede alle fasi di avvio.</div>
-    </div>
+  <div class="hint">
+    💡 Trascina con il mouse per spostarti &bull; Rotella per zoomare &bull; Trascina i nodi liberamente
   </div>
 
-  <div class="arrow-down">↓</div>
+  <script type="text/javascript">
+    const nodes = new vis.DataSet([
+      // START & INIT
+      { id: 'start', label: '🚀 AVVIO\nluks-manager.sh', color: '#0284c7', font: { color: '#fff', face: 'Segoe UI', size: 16, bold: true }, shape: 'box', margin: 12 },
+      { id: 'root_chk', label: 'UID == 0\n(root)?', color: '#4f46e5', font: { color: '#fff' }, shape: 'diamond', size: 30 },
+      { id: 'sudo', label: 'exec sudo\nluks-manager.sh', color: '#1e293b', font: { color: '#e2e8f0' }, shape: 'box' },
+      { id: 'flock_chk', label: 'flock -n\nlockfile libero?', color: '#4f46e5', font: { color: '#fff' }, shape: 'diamond', size: 30 },
+      { id: 'err_lock', label: '❌ Lock occupato\n(exit 1)', color: '#991b1b', font: { color: '#fca5a5' }, shape: 'box' },
+      { id: 'stdin_buf', label: 'Bufferizza STDIN\nin RAM (/dev/shm)', color: '#1e293b', font: { color: '#e2e8f0' }, shape: 'box' },
+      { id: 'env_chk', label: '.env file\nesiste?', color: '#4f46e5', font: { color: '#fff' }, shape: 'diamond', size: 30 },
+      { id: 'err_env', label: '❌ .env mancante\n(exit 1)', color: '#991b1b', font: { color: '#fca5a5' }, shape: 'box' },
+      { id: 'cmd_chk', label: 'Comando CLI\no Demone?', color: '#4f46e5', font: { color: '#fff', bold: true }, shape: 'diamond', size: 35 },
 
-  <!-- FASI DI AVVIO -->
-  <div class="section-title"><span>🟢</span> 2. Sequenza di Avvio & Sblocco (Start / Unlock)</div>
-  <div class="flow-tree">
+      // STATUS BRANCH
+      { id: 'status_exec', label: 'Interroga stato\n(HA, LVM, LUKS, Mount, WebDAV)\nStampa ed esce (exit 0)', color: '#0284c7', font: { color: '#fff' }, shape: 'box' },
 
-    <!-- FASE 1 -->
-    <div class="flow-step">
-      <div class="step-header">
-        <span class="step-title"><span class="step-number" style="background:#10b981; color:#fff;">1</span> Alimentazione Presa 220V (Home Assistant)</span>
-      </div>
-      <div class="branches">
-        <div class="branch-card action">
-          <div class="branch-title">Home Assistant Abilitato</div>
-          <div class="branch-desc">Invia <code>curl POST /api/services/switch/turn_on</code> con timeout rigidi di 4s. Attende in polling fino a <code>HA_WAIT_TIMEOUT</code> (15s) la conferma <code>state: "on"</code>.</div>
-        </div>
-        <div class="branch-card error">
-          <div class="branch-title">Errore Connessione / Timeout Presa</div>
-          <div class="branch-desc">Se HA è irraggiungibile o la presa non si accende entro 15s: notifica Discord, arresta la procedura ed esce (senza toccare il disco).</div>
-        </div>
-        <div class="branch-card warn">
-          <div class="branch-title">Home Assistant Disabilitato</div>
-          <div class="branch-desc">Se <code>ENABLE_HOME_ASSISTANT=false</code>, salta direttamente all'attesa disco.</div>
-        </div>
-      </div>
-    </div>
+      // START BRANCH - FASE 1: POWER ON
+      { id: 'ha_chk', label: 'Home Assistant\nAbilitato?', color: '#4f46e5', font: { color: '#fff' }, shape: 'diamond', size: 30 },
+      { id: 'ha_on', label: 'curl POST switch/turn_on\n(Timeout 4s)', color: '#1e293b', font: { color: '#e2e8f0' }, shape: 'box' },
+      { id: 'ha_on_chk', label: 'Chiamata HA\nriuscita?', color: '#4f46e5', font: { color: '#fff' }, shape: 'diamond', size: 30 },
+      { id: 'err_ha_call', label: '❌ Errore API HA\nNotifica Discord (exit 1)', color: '#991b1b', font: { color: '#fca5a5' }, shape: 'box' },
+      { id: 'ha_poll', label: 'Loop attesa state=="on"\n(max 15s)', color: '#1e293b', font: { color: '#e2e8f0' }, shape: 'box' },
+      { id: 'ha_poll_chk', label: 'Presa ON\nentro 15s?', color: '#4f46e5', font: { color: '#fff' }, shape: 'diamond', size: 30 },
 
-    <div class="arrow-down">↓</div>
+      // FASE 2: USB DETECTION
+      { id: 'usb_poll', label: 'Loop rilevamento disco\nsu bus USB (max 40s)', color: '#1e293b', font: { color: '#e2e8f0' }, shape: 'box' },
+      { id: 'usb_chk', label: 'Disco rilevato\nsul bus USB?', color: '#4f46e5', font: { color: '#fff' }, shape: 'diamond', size: 30 },
 
-    <!-- FASE 2 -->
-    <div class="flow-step">
-      <div class="step-header">
-        <span class="step-title"><span class="step-number" style="background:#10b981; color:#fff;">2</span> Rilevamento Hardware sul Bus USB & Spin-up</span>
-      </div>
-      <div class="branches">
-        <div class="branch-card action">
-          <div class="branch-title">Loop di Rilevamento (max 40s)</div>
-          <div class="branch-desc">Attende che il disco completi lo spin-up meccanico. Esegue <code>pvscan</code> e <code>vgscan --mknodes</code> cercando il Volume Group configurato (<code>mybook</code>).</div>
-        </div>
-        <div class="branch-card error">
-          <div class="branch-title">Disco Non Rilevato Entro 40s</div>
-          <div class="branch-desc">Notifica Discord di errore ed esegue il <strong>Teardown di sicurezza</strong> (spegnendo la presa 220V per non lasciarla accesa a vuoto).</div>
-        </div>
-      </div>
-    </div>
+      // FASE 3: LVM ACTIVATION
+      { id: 'lvm_act', label: 'vgscan --mknodes\nvgchange -ay mybook', color: '#1e293b', font: { color: '#e2e8f0' }, shape: 'box' },
+      { id: 'luks_chk', label: '/dev/mapper/cryptovault\ngià aperto?', color: '#4f46e5', font: { color: '#fff' }, shape: 'diamond', size: 30 },
 
-    <div class="arrow-down">↓</div>
+      // FASE 4: LUKS UNLOCK
+      { id: 'key_src', label: 'Origine Chiave\ndi Sblocco', color: '#4f46e5', font: { color: '#fff', bold: true }, shape: 'diamond', size: 35 },
+      { id: 'kf_open', label: 'cryptsetup open\n--key-file <path>', color: '#1e293b', font: { color: '#e2e8f0' }, shape: 'box' },
+      { id: 'stdin_open', label: 'cryptsetup open\n--key-file /dev/shm/...\n(Subito dopo: shred RAM buffer)', color: '#1e293b', font: { color: '#e2e8f0' }, shape: 'box' },
+      { id: 'tty_open', label: 'Prompt Passphrase TTY\n(Loop max 3 tentativi)', color: '#1e293b', font: { color: '#e2e8f0' }, shape: 'box' },
+      { id: 'luks_unlocked_chk', label: 'Sblocco LUKS2\nriuscito?', color: '#4f46e5', font: { color: '#fff' }, shape: 'diamond', size: 30 },
 
-    <!-- FASE 3 -->
-    <div class="flow-step">
-      <div class="step-header">
-        <span class="step-title"><span class="step-number" style="background:#10b981; color:#fff;">3</span> Attivazione LVM (Volume Group)</span>
-      </div>
-      <div class="branch-card action">
-        <div class="branch-title">Attivazione Nodi Logici</div>
-        <div class="branch-desc">Esegue <code>vgchange -ay mybook</code>. Rende disponibili i nodi <code>/dev/mybook/crypto_data</code> e <code>/dev/mybook/backup_data</code> nel kernel.</div>
-      </div>
-    </div>
+      // FASE 5: MOUNT & WEBDAV
+      { id: 'mount_crypto', label: 'mkdir & mount\n/dev/mapper/cryptovault\n-> /srv/storage/crypto_data\n(ext4, SGID 2775)', color: '#065f46', font: { color: '#6ee7b7' }, shape: 'box' },
+      { id: 'bkp_chk', label: 'Secondo Volume\nLV_BACKUP definito?', color: '#4f46e5', font: { color: '#fff' }, shape: 'diamond', size: 30 },
+      { id: 'mount_bkp', label: 'mount\n/dev/mybook/backup_data\n-> /srv/storage/backup_data', color: '#065f46', font: { color: '#6ee7b7' }, shape: 'box' },
+      { id: 'webdav_chk', label: 'ENABLE_WEBDAV\n== true?', color: '#4f46e5', font: { color: '#fff' }, shape: 'diamond', size: 30 },
+      { id: 'webdav_start', label: 'Aggiorna config.yaml\nsystemctl restart webdav', color: '#1e293b', font: { color: '#e2e8f0' }, shape: 'box' },
+      { id: 'notify_unlock', label: 'Notifica Discord unlock\nStampa df -h storage', color: '#1e293b', font: { color: '#e2e8f0' }, shape: 'box' },
 
-    <div class="arrow-down">↓</div>
+      // FASE 6: RUNTIME MODES
+      { id: 'exec_mode', label: 'Modalità di\nEsecuzione', color: '#4f46e5', font: { color: '#fff', bold: true }, shape: 'diamond', size: 35 },
+      { id: 'daemon_exit', label: '✓ SESSIONE ATTIVA & MONTATA\nDisarma Trap ed esce (exit 0)', color: '#059669', font: { color: '#fff', bold: true }, shape: 'box', margin: 10 },
+      { id: 'watchdog_loop', label: 'Loop Monitor I/O Disco\nogni 15s (o tasto INVIO utente)', color: '#1e293b', font: { color: '#e2e8f0' }, shape: 'box' },
+      { id: 'wd_event', label: 'Evento\nRilevato', color: '#4f46e5', font: { color: '#fff' }, shape: 'diamond', size: 30 },
 
-    <!-- FASE 4 -->
-    <div class="flow-step">
-      <div class="step-header">
-        <span class="step-title"><span class="step-number" style="background:#10b981; color:#fff;">4</span> Sblocco Crittografico LUKS2 in RAM</span>
-      </div>
-      <div class="branches">
-        <div class="branch-card action">
-          <div class="branch-title">Caso A: File Chiave CLI (<code>--keyfile</code>)</div>
-          <div class="branch-desc">Sblocca con <code>cryptsetup open /dev/mybook/crypto_data cryptovault --key-file &lt;path&gt;</code>.</div>
-        </div>
-        <div class="branch-card action">
-          <div class="branch-title">Caso B: STDIN / WebUI Stego Socket</div>
-          <div class="branch-desc">Passa il file temporaneo in RAM da <code>/dev/shm</code>, sblocca il volume e fa subito <code>shred -u</code> del buffer di memoria.</div>
-        </div>
-        <div class="branch-card action">
-          <div class="branch-title">Caso C: TTY Interattivo (Passphrase)</div>
-          <div class="branch-desc">Prompt mascherato da terminale (fino a 3 tentativi massimi).</div>
-        </div>
-        <div class="branch-card error">
-          <div class="branch-title">Chiave / Passphrase Errata</div>
-          <div class="branch-desc">Se lo sblocco fallisce: notifica Discord di allarme, azzera la variabile di memoria e avvia il <strong>Teardown Sicuro</strong> con spegnimento della presa.</div>
-        </div>
-      </div>
-    </div>
+      // ==========================================
+      // TEARDOWN SEQUENZA SICURA
+      // ==========================================
+      { id: 't_entry', label: '🛡️ INIZIO TEARDOWN SICURO\n(safe_power_off_sequence)\nDisabilita Traps ERR/SIGINT', color: '#c2410c', font: { color: '#fff', bold: true }, shape: 'box', margin: 10 },
+      { id: 't_guard', label: 'TEARDOWN_DONE\ngià true?', color: '#4f46e5', font: { color: '#fff' }, shape: 'diamond', size: 30 },
+      { id: 't_ret0', label: 'return 0\n(evita doppi spegnimenti)', color: '#7c2d12', font: { color: '#fdba74' }, shape: 'box' },
+      { id: 't_save_dev', label: 'Rileva e memorizza target_dev\nPRIMA dello smontaggio', color: '#7c2d12', font: { color: '#fdba74' }, shape: 'box' },
+      { id: 't_stop_wd', label: '1. systemctl stop webdav\n(Blocca connessioni client)', color: '#7c2d12', font: { color: '#fdba74' }, shape: 'box' },
+      { id: 't_sync', label: '2. sync\n(Flush page cache RAM su disco)', color: '#7c2d12', font: { color: '#fdba74' }, shape: 'box' },
+      { id: 't_umount', label: '3. fuser -km -9 sui mountpoint\numount filesystem\n(fallback: umount -l)', color: '#7c2d12', font: { color: '#fdba74' }, shape: 'box' },
+      { id: 't_close_luks', label: '4. cryptsetup close cryptovault\n(Distruzione Master Key in RAM)', color: '#7c2d12', font: { color: '#fdba74' }, shape: 'box' },
+      { id: 't_close_lvm', label: '5. vgchange -an mybook\n(Disattivazione Volume Group)', color: '#7c2d12', font: { color: '#fdba74' }, shape: 'box' },
+      { id: 't_sys_guard', label: 'target_dev è il disco\ndi sistema OS?', color: '#4f46e5', font: { color: '#fff' }, shape: 'diamond', size: 30 },
+      { id: 't_abort_scsi', label: '⛔ Protezione:\nAnnulla comandi SCSI per OS', color: '#991b1b', font: { color: '#fca5a5' }, shape: 'box' },
+      { id: 't_scsi', label: '6. udisksctl power-off -b dev\n(SCSI STOP UNIT: Parcheggio Testine)', color: '#7c2d12', font: { color: '#fdba74' }, shape: 'box' },
+      { id: 't_scsi_wait', label: 'Attesa rimozione da /sys/block/\n(max 10s o sleep SPINDOWN 3s)', color: '#7c2d12', font: { color: '#fdba74' }, shape: 'box' },
+      { id: 't_ha_cut_chk', label: 'Home Assistant ON\n& Presa da spegnere?', color: '#4f46e5', font: { color: '#fff' }, shape: 'diamond', size: 30 },
+      { id: 't_grace', label: '7. Pausa di Tolleranza\n(CUTOFF_GRACE_SEC = 5s)', color: '#7c2d12', font: { color: '#fdba74' }, shape: 'box' },
+      { id: 't_ha_off', label: '8. curl POST switch/turn_off\n(Home Assistant)', color: '#7c2d12', font: { color: '#fdba74' }, shape: 'box' },
+      { id: 't_final', label: '🔴 DISCO INERTE & 0W STANDBY\nWipe PASSPHRASE ed uscita', color: '#991b1b', font: { color: '#fff', bold: true }, shape: 'box', margin: 12 }
+    ]);
 
-    <div class="arrow-down">↓</div>
+    const edges = new vis.DataSet([
+      { from: 'start', to: 'root_chk' },
+      { from: 'root_chk', to: 'sudo', label: 'No' },
+      { from: 'sudo', to: 'flock_chk' },
+      { from: 'root_chk', to: 'flock_chk', label: 'Sì' },
+      { from: 'flock_chk', to: 'err_lock', label: 'Occupato' },
+      { from: 'flock_chk', to: 'stdin_buf', label: 'Acquisito' },
+      { from: 'stdin_buf', to: 'env_chk' },
+      { from: 'env_chk', to: 'err_env', label: 'No' },
+      { from: 'env_chk', to: 'cmd_chk', label: 'Sì' },
 
-    <!-- FASE 5 -->
-    <div class="flow-step">
-      <div class="step-header">
-        <span class="step-title"><span class="step-number" style="background:#10b981; color:#fff;">5</span> Montaggio Filesystem Unificato & Avvio Servizi</span>
-      </div>
-      <div class="branches">
-        <div class="branch-card success">
-          <div class="branch-title">Mount Dati Cifrati (ext4)</div>
-          <div class="branch-desc">Monta <code>/dev/mapper/cryptovault</code> su <code>/srv/storage/crypto_data</code> con flag <code>noatime,nodev,nosuid</code>. Applica permessi gruppo <code>storage</code> (SGID 2775).</div>
-        </div>
-        <div class="branch-card success">
-          <div class="branch-title">Mount Secondo Volume (Opzionale)</div>
-          <div class="branch-desc">Se configurato <code>LV_BACKUP</code>, monta <code>/dev/mybook/backup_data</code> su <code>/srv/storage/backup_data</code> con permessi gruppo <code>storage</code>.</div>
-        </div>
-        <div class="branch-card action">
-          <div class="branch-title">Riavvio WebDAV / Samba</div>
-          <div class="branch-desc">Aggiorna la radice in <code>/etc/webdav/config.yaml</code> e riavvia <code>webdav.service</code>.</div>
-        </div>
-      </div>
-    </div>
+      // Commands
+      { from: 'cmd_chk', to: 'status_exec', label: 'status' },
+      { from: 'cmd_chk', to: 't_entry', label: 'stop / lock' },
+      { from: 'cmd_chk', to: 'ha_chk', label: 'start / unlock' },
 
-    <div class="arrow-down">↓</div>
+      // HA Power on
+      { from: 'ha_chk', to: 'usb_poll', label: 'No (Always-on)' },
+      { from: 'ha_chk', to: 'ha_on', label: 'Sì' },
+      { from: 'ha_on', to: 'ha_on_chk' },
+      { from: 'ha_on_chk', to: 'err_ha_call', label: 'Fallito' },
+      { from: 'ha_on_chk', to: 'ha_poll', label: 'Successo' },
+      { from: 'ha_poll', to: 'ha_poll_chk' },
+      { from: 'ha_poll_chk', to: 't_entry', label: 'Timeout 15s' },
+      { from: 'ha_poll_chk', to: 'usb_poll', label: 'Stato ON' },
 
-    <!-- FASE 6 -->
-    <div class="flow-step">
-      <div class="step-header">
-        <span class="step-title"><span class="step-number" style="background:#38bdf8; color:#000;">6</span> Modalità di Esecuzione & Watchdog Inattività</span>
-      </div>
-      <div class="branches">
-        <div class="branch-card success">
-          <div class="branch-title">Modalità Demone / WebUI (<code>--no-watchdog</code>)</div>
-          <div class="branch-desc">Disarma la trap di uscita e termina lo script con <code>exit 0</code> lasciando lo storage montato e pronto all'uso.</div>
-        </div>
-        <div class="branch-card warn">
-          <div class="branch-title">Modalità Interattiva da Terminale CLI</div>
-          <div class="branch-desc">Resta in ascolto: monitora le statistiche di I/O del disco ogni 15s. Se non ci sono letture/scritture per più di <code>IDLE_TIMEOUT_MIN</code> (o se l'utente preme INVIO), avvia il Teardown automatico.</div>
-        </div>
-      </div>
-    </div>
+      // USB Detection
+      { from: 'usb_poll', to: 'usb_chk' },
+      { from: 'usb_chk', to: 't_entry', label: 'Timeout 40s' },
+      { from: 'usb_chk', to: 'lvm_act', label: 'Disco Presente' },
 
-  </div>
+      // LVM & LUKS
+      { from: 'lvm_act', to: 'luks_chk' },
+      { from: 'luks_chk', to: 'mount_crypto', label: 'Già aperto' },
+      { from: 'luks_chk', to: 'key_src', label: 'Chiuso' },
 
-  <!-- SEQUENZA DI TEARDOWN -->
-  <div class="teardown-box">
-    <h2><span>🛡️</span> 3. Sequenza di Teardown & Arresto Sicuro (safe_power_off_sequence)</h2>
-    <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:1.25rem;">Questa sequenza è <strong>atomica e irreversibile</strong>. Viene protetta disabilitando i segnali di interruzione (<code>trap '' ERR SIGINT SIGTERM</code>) per garantire che nessuna fase venga saltata.</p>
+      // Key Sources
+      { from: 'key_src', to: 'kf_open', label: '--keyfile' },
+      { from: 'key_src', to: 'stdin_open', label: 'STDIN / WebUI' },
+      { from: 'key_src', to: 'tty_open', label: 'TTY Prompt' },
+      { from: 'kf_open', to: 'luks_unlocked_chk' },
+      { from: 'stdin_open', to: 'luks_unlocked_chk' },
+      { from: 'tty_open', to: 'luks_unlocked_chk' },
+      { from: 'luks_unlocked_chk', to: 't_entry', label: 'Errato' },
+      { from: 'luks_unlocked_chk', to: 'mount_crypto', label: 'Sbloccato' },
 
-    <div class="flow-tree">
-      <div class="branch-card teardown">
-        <div class="branch-title">1. Stop del Servizio WebDAV</div>
-        <div class="branch-desc">Esegue <code>systemctl stop webdav</code> chiudendo all'istante tutte le sessioni di rete dei client Windows/Mac/Linux per bloccare nuove scritture.</div>
-      </div>
+      // Mount & Services
+      { from: 'mount_crypto', to: 'bkp_chk' },
+      { from: 'bkp_chk', to: 'mount_bkp', label: 'Sì' },
+      { from: 'mount_bkp', to: 'webdav_chk' },
+      { from: 'bkp_chk', to: 'webdav_chk', label: 'No' },
+      { from: 'webdav_chk', to: 'webdav_start', label: 'Sì' },
+      { from: 'webdav_start', to: 'notify_unlock' },
+      { from: 'webdav_chk', to: 'notify_unlock', label: 'No' },
 
-      <div class="branch-card teardown">
-        <div class="branch-title">2. Flush dei Buffer di Memoria (sync)</div>
-        <div class="branch-desc">Esegue <code>sync</code> per scaricare forzatamente tutti i blocchi dalla page cache della RAM sui piatti del disco fisico.</div>
-      </div>
+      // Execution Modes
+      { from: 'notify_unlock', to: 'exec_mode' },
+      { from: 'exec_mode', to: 'daemon_exit', label: 'Demone / WebUI' },
+      { from: 'exec_mode', to: 'watchdog_loop', label: 'CLI Interattiva' },
+      { from: 'watchdog_loop', to: 'wd_event' },
+      { from: 'wd_event', to: 't_entry', label: 'Tasto INVIO o Inattività' },
 
-      <div class="branch-card teardown">
-        <div class="branch-title">3. Smontaggio Filesystem (umount)</div>
-        <div class="branch-desc">Termina processi rimasti aperti con <code>fuser -km -9</code> sui mountpoint. Smonta <code>/srv/storage/crypto_data</code> e <code>/srv/storage/backup_data</code> (con fallback su lazy unmount <code>umount -l</code> se occupati).</div>
-      </div>
+      // Teardown Sequence
+      { from: 't_entry', to: 't_guard' },
+      { from: 't_guard', to: 't_ret0', label: 'Già fatto' },
+      { from: 't_guard', to: 't_save_dev', label: 'Da eseguire' },
+      { from: 't_save_dev', to: 't_stop_wd' },
+      { from: 't_stop_wd', to: 't_sync' },
+      { from: 't_sync', to: 't_umount' },
+      { from: 't_umount', to: 't_close_luks' },
+      { from: 't_close_luks', to: 't_close_lvm' },
+      { from: 't_close_lvm', to: 't_sys_guard' },
+      { from: 't_sys_guard', to: 't_abort_scsi', label: 'Disco OS' },
+      { from: 't_sys_guard', to: 't_scsi', label: 'Storage' },
+      { from: 't_abort_scsi', to: 't_ha_cut_chk' },
+      { from: 't_scsi', to: 't_scsi_wait' },
+      { from: 't_scsi_wait', to: 't_ha_cut_chk' },
+      { from: 't_ha_cut_chk', to: 't_grace', label: 'Sì (Presa ON)' },
+      { from: 't_grace', to: 't_ha_off' },
+      { from: 't_ha_off', to: 't_final' },
+      { from: 't_ha_cut_chk', to: 't_final', label: 'No (Always-on)' }
+    ]);
 
-      <div class="branch-card teardown">
-        <div class="branch-title">4. Chiusura Container LUKS (Sigillo RAM)</div>
-        <div class="branch-desc">Esegue <code>cryptsetup close cryptovault</code> (con retry fino a 3 volte e fallback <code>dmsetup remove -f</code>). <strong>La Master Key viene istantaneamente distrutta dalla memoria volatile.</strong></div>
-      </div>
+    const container = document.getElementById('network');
+    const data = { nodes: nodes, edges: edges };
+    const options = {
+      layout: {
+        hierarchical: {
+          direction: 'UD',
+          sortMethod: 'directed',
+          nodeSpacing: 180,
+          levelSeparation: 120
+        }
+      },
+      physics: {
+        hierarchicalRepulsion: {
+          nodeDistance: 190
+        }
+      },
+      edges: {
+        arrows: { to: { enabled: true, scaleFactor: 0.8 } },
+        color: { color: '#64748b', highlight: '#38bdf8' },
+        font: { color: '#94a3b8', size: 11, face: 'Segoe UI', align: 'horizontal', background: '#0b0f19' },
+        smooth: { type: 'cubicBezier', forceDirection: 'vertical', roundness: 0.4 }
+      },
+      interaction: {
+        hover: true,
+        navigationButtons: true,
+        keyboard: true
+      }
+    };
 
-      <div class="branch-card teardown">
-        <div class="branch-title">5. Disattivazione Volume Group LVM</div>
-        <div class="branch-desc">Esegue <code>vgchange -an mybook</code> rilasciando tutti i descrittori logici del kernel.</div>
-      </div>
-
-      <div class="branch-card teardown">
-        <div class="branch-title">6. Parcheggio Meccanico Testine SCSI (STOP UNIT)</div>
-        <div class="branch-desc">Invia il comando hardware <code>udisksctl power-off -b /dev/sdX</code>. Attende che il kernel confermi la disconnessione (fino a 10s) oppure applica una pausa di <code>SPINDOWN_WAIT_SEC</code> (3s) per consentire alle testine di raggiungere la rampa di parcheggio.</div>
-      </div>
-
-      <div class="branch-card teardown">
-        <div class="branch-title">7. Pausa di Tolleranza & Taglio Alimentazione 220V</div>
-        <div class="branch-desc">Attende la pausa di grazia <code>CUTOFF_GRACE_SEC</code> (5s) per garantire che i dischi siano completamente fermi. Invia <code>curl POST /api/services/switch/turn_off</code> a Home Assistant. <strong>Lo storage scende a 0 Watt di consumo.</strong></div>
-      </div>
-    </div>
-  </div>
-
-</div>
-
+    const network = new vis.Network(container, data, options);
+  </script>
 </body>
 </html>
