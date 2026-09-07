@@ -1,336 +1,406 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="it">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LUKS Companion - Flowchart Completo Architettura & Ciclo di Vita</title>
-  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
+  <title>LUKS Companion - Flowchart Ciclo di Vita Completo</title>
   <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: #111827;
+      --border: #1f2937;
+      --primary: #38bdf8;
+      --success: #10b981;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --orange: #f97316;
+      --purple: #818cf8;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background-color: #0b0f19;
-      color: #f1f5f9;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      overflow: hidden;
-      width: 100vw;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 2rem;
+      overflow-y: auto;
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
     }
     header {
-      background: #111827;
-      border-bottom: 1px solid #1f2937;
-      padding: 0.75rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1.5rem;
+      margin-bottom: 2rem;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      z-index: 100;
+      flex-wrap: wrap;
+      gap: 1rem;
     }
-    .header-title {
+    h1 { font-size: 1.75rem; color: var(--primary); }
+    .badge {
+      padding: 0.35rem 0.85rem;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--primary);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+    
+    .section-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin: 2rem 0 1rem 0;
       display: flex;
       align-items: center;
       gap: 0.75rem;
     }
-    .header-title h1 {
-      font-size: 1.15rem;
-      font-weight: 700;
-      color: #38bdf8;
-      letter-spacing: -0.01em;
-    }
-    .header-title span {
-      font-size: 0.8rem;
-      background: rgba(56, 189, 248, 0.15);
-      color: #38bdf8;
-      border: 1px solid rgba(56, 189, 248, 0.3);
-      padding: 0.2rem 0.6rem;
-      border-radius: 9999px;
-      font-weight: 600;
-    }
-    .controls {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    button {
-      background: #1e293b;
-      color: #f1f5f9;
-      border: 1px solid #334155;
-      padding: 0.45rem 0.85rem;
-      border-radius: 0.375rem;
-      font-size: 0.85rem;
-      font-weight: 600;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-      transition: all 0.15s ease;
-    }
-    button:hover {
-      background: #334155;
-      border-color: #38bdf8;
-      color: #38bdf8;
-    }
-    #container {
-      flex: 1;
-      width: 100%;
-      height: calc(100vh - 60px);
-      position: relative;
-      background: radial-gradient(circle at center, #1e293b 0%, #0b0f19 100%);
-      cursor: grab;
-    }
-    #container:active {
-      cursor: grabbing;
-    }
-    #mermaidOutput {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    #mermaidOutput svg {
-      width: 100% !important;
-      height: 100% !important;
-      max-width: none !important;
-    }
-    .legend {
-      position: absolute;
-      bottom: 1.5rem;
-      left: 1.5rem;
-      background: rgba(17, 24, 39, 0.85);
-      backdrop-filter: blur(8px);
-      border: 1px solid #374151;
-      border-radius: 0.5rem;
-      padding: 0.75rem 1rem;
-      font-size: 0.78rem;
+
+    /* Grid & Cards */
+    .flow-tree {
       display: flex;
       flex-direction: column;
-      gap: 0.4rem;
-      z-index: 50;
-      pointer-events: none;
+      gap: 1rem;
+      position: relative;
     }
-    .legend-item {
+
+    .flow-step {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 1.25rem 1.5rem;
+      position: relative;
+      transition: all 0.2s ease;
+    }
+    .flow-step:hover {
+      border-color: #334155;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+
+    .step-header {
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      justify-content: space-between;
+      margin-bottom: 0.75rem;
     }
-    .legend-box {
-      width: 12px;
-      height: 12px;
-      border-radius: 3px;
+    .step-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      font-weight: 700;
+      font-size: 0.85rem;
     }
-    .hint {
-      position: absolute;
-      bottom: 1.5rem;
-      right: 1.5rem;
-      background: rgba(17, 24, 39, 0.85);
-      border: 1px solid #374151;
+    .step-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .branches {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .branch-card {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255,255,255,0.06);
       border-radius: 0.5rem;
-      padding: 0.5rem 0.85rem;
-      font-size: 0.78rem;
-      color: #94a3b8;
-      z-index: 50;
-      pointer-events: none;
+      padding: 1rem;
+    }
+    .branch-card.success { border-left: 4px solid var(--success); }
+    .branch-card.error { border-left: 4px solid var(--danger); }
+    .branch-card.warn { border-left: 4px solid var(--warn); }
+    .branch-card.action { border-left: 4px solid var(--primary); }
+    .branch-card.teardown { border-left: 4px solid var(--orange); }
+
+    .branch-title {
+      font-weight: 600;
+      font-size: 0.9rem;
+      margin-bottom: 0.35rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .branch-desc {
+      font-size: 0.83rem;
+      color: var(--text-muted);
+    }
+    code {
+      background: rgba(0,0,0,0.3);
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.82rem;
+      color: #38bdf8;
+    }
+
+    .arrow-down {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: var(--primary);
+      font-size: 1.5rem;
+      margin: 0.25rem 0;
+      opacity: 0.6;
+    }
+
+    .teardown-box {
+      background: rgba(67, 20, 7, 0.15);
+      border: 1px solid rgba(249, 115, 22, 0.3);
+      border-radius: 0.75rem;
+      padding: 1.5rem;
+      margin-top: 2rem;
+    }
+    .teardown-box h2 {
+      color: var(--orange);
+      font-size: 1.25rem;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
     }
   </style>
 </head>
 <body>
 
+<div class="container">
   <header>
-    <div class="header-title">
+    <div>
       <h1>LUKS Manager - Architecture & Lifecycle Flowchart</h1>
-      <span>v2.0 LUKS2 Master</span>
+      <p style="color:var(--text-muted); font-size:0.9rem; margin-top:0.25rem;">Rappresentazione visuale dettagliata di tutti i controlli, rami di errore e sequenze atomiche</p>
     </div>
-    <div class="controls">
-      <button onclick="panZoomInstance.zoomIn()">🔍 Zoom +</button>
-      <button onclick="panZoomInstance.zoomOut()">🔍 Zoom -</button>
-      <button onclick="panZoomInstance.resetZoom(); panZoomInstance.center();">🔄 Reset Vista</button>
-      <button onclick="panZoomInstance.fit(); panZoomInstance.center();">📐 Adatta allo Schermo</button>
-    </div>
+    <span class="badge">v2.0 Orchestrator</span>
   </header>
 
-  <div id="container">
-    <div id="mermaidOutput">
-      <pre class="mermaid">
-flowchart TD
-    %% STILI GENERALI
-    classDef startNode fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#fff;
-    classDef actionNode fill:#1e293b,stroke:#475569,stroke-width:1px,color:#e2e8f0;
-    classDef decisionNode fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#fff;
-    classDef errorNode fill:#450a0a,stroke:#ef4444,stroke-width:2px,color:#fca5a5;
-    classDef successNode fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#6ee7b7;
-    classDef teardownNode fill:#431407,stroke:#f97316,stroke-width:2px,color:#fdba74;
-
-    START(["AVVIO luks-manager.sh"]) :::startNode --> ROOT{"UID == 0 root?"}:::decisionNode
-    ROOT -- "No" --> SUDO["exec sudo luks-manager.sh"]:::actionNode --> FLOCK
-    ROOT -- "Sì" --> FLOCK{"flock -n /run/luks-manager.lock"}:::decisionNode
-    
-    FLOCK -- "Occupato" --> ERR_LOCK["ERRORE: Lock occupato -> exit 1"]:::errorNode
-    FLOCK -- "Acquisito" --> STDIN_BUF["Bufferizza STDIN in RAM se presente"]:::actionNode
-    STDIN_BUF --> LOAD_ENV{".env esiste?"}:::decisionNode
-    
-    LOAD_ENV -- "No" --> ERR_ENV["ERRORE: .env mancante -> exit 1"]:::errorNode
-    LOAD_ENV -- "Sì" --> PARSE_ARGS["Carica env e Parsing argomenti CLI"]:::actionNode
-    PARSE_ARGS --> CMD_DISPATCH{"Comando CLI o Demone"}:::decisionNode
-
-    %% RAMO STATUS
-    CMD_DISPATCH -- "status" --> ST_QUERY["Interroga HA, LVM, LUKS, Mount, WebDAV"]:::actionNode
-    ST_QUERY --> ST_PRINT["Stampa tabella stato su stdout"]:::actionNode --> EXIT_0_ST(["exit 0"]):::successNode
-
-    %% RAMO STOP
-    CMD_DISPATCH -- "stop o lock" --> TEARDOWN_ENTRY
-
-    %% RAMO START
-    CMD_DISPATCH -- "start o unlock" --> TRAP_INIT["Arma Traps: SIGINT, SIGTERM, SIGHUP"]:::actionNode
-    TRAP_INIT --> HA_CHECK{"Home Assistant abilitato?"}:::decisionNode
-
-    %% FASE 1: POWER ON
-    HA_CHECK -- "No" --> DISK_WAIT
-    HA_CHECK -- "Sì" --> HA_ON["curl POST switch/turn_on"]:::actionNode
-    HA_ON --> HA_ON_RES{"Chiamata riuscita?"}:::decisionNode
-    HA_ON_RES -- "No" --> ERR_HA1["Notifica Discord ed Errore HA -> exit 1"]:::errorNode
-    HA_ON_RES -- "Sì" --> HA_POLL["Loop attesa stato on"]:::actionNode
-    HA_POLL --> HA_POLL_RES{"Stato on confermato?"}:::decisionNode
-    HA_POLL_RES -- "Timeout" --> ERR_HA2["Timeout accensione presa"]:::errorNode --> TEARDOWN_ENTRY
-
-    %% FASE 2: RILEVAMENTO HARDWARE
-    HA_POLL_RES -- "Sì" --> DISK_WAIT["Loop attesa rilevamento LVM o SCSI"]:::actionNode
-    DISK_WAIT --> DISK_FOUND{"Disco rilevato?"}:::decisionNode
-    DISK_FOUND -- "Timeout" --> ERR_DISK["Disco non apparso sul bus USB"]:::errorNode --> TEARDOWN_ENTRY
-
-    %% FASE 3: LVM ACTIVATION
-    DISK_FOUND -- "Sì" --> LVM_ACT["vgscan e vgchange -ay VG_NAME"]:::actionNode
-    LVM_ACT --> LUKS_ALREADY{"cryptovault già aperto?"}:::decisionNode
-
-    %% FASE 4: LUKS UNLOCK
-    LUKS_ALREADY -- "Sì" --> MOUNT_PHASE
-    LUKS_ALREADY -- "No" --> KEY_SRC{"Origine Chiave"}:::decisionNode
-
-    KEY_SRC -- "Opzione keyfile percorso" --> KF_EXISTS{"File esiste?"}:::decisionNode
-    KF_EXISTS -- "No" --> ERR_KF["File chiave non trovato"]:::errorNode --> TEARDOWN_ENTRY
-    KF_EXISTS -- "Sì" --> KF_OPEN["cryptsetup open con key-file"]:::actionNode
-    KF_OPEN --> KF_RES{"Sblocco riuscito?"}:::decisionNode
-    KF_RES -- "No" --> ERR_KF_INV["Chiave non valida"]:::errorNode --> TEARDOWN_ENTRY
-    KF_RES -- "Sì" --> MOUNT_PHASE
-
-    KEY_SRC -- "STDIN o WebUI Socket" --> STDIN_OPEN["cryptsetup open con stdin in RAM"]:::actionNode
-    STDIN_OPEN --> STDIN_CLEAN["cleanup_key: wipe RAM buffer"]:::actionNode
-    STDIN_CLEAN --> STDIN_RES{"Sblocco riuscito?"}:::decisionNode
-    STDIN_RES -- "No" --> ERR_STDIN["Passphrase o Key errata"]:::errorNode --> TEARDOWN_ENTRY
-    STDIN_RES -- "Sì" --> MOUNT_PHASE
-
-    KEY_SRC -- "TTY Interattivo" --> TTY_LOOP["Loop Passphrase max 3 tentativi"]:::actionNode
-    TTY_LOOP --> TTY_RES{"Sblocco riuscito?"}:::decisionNode
-    TTY_RES -- "No" --> ERR_TTY["Superati 3 tentativi errati"]:::errorNode --> TEARDOWN_ENTRY
-    TTY_RES -- "Sì" --> MOUNT_PHASE
-
-    %% FASE 5: MOUNT & SERVIZI
-    MOUNT_PHASE["mkdir /srv/storage e permessi gruppo storage"]:::actionNode
-    MOUNT_PHASE --> MOUNT_EXT4["mount cryptovault su /srv/storage/crypto_data"]:::actionNode
-    MOUNT_EXT4 --> MOUNT_BKP{"LV_BACKUP configurato?"}:::decisionNode
-    MOUNT_BKP -- "Sì" --> MOUNT_BKP_EXEC["mount backup_data su /srv/storage/backup_data"]:::actionNode --> WEBDAV_CHECK
-    MOUNT_BKP -- "No" --> WEBDAV_CHECK{"WebDAV abilitato?"}:::decisionNode
-
-    WEBDAV_CHECK -- "Sì" --> WEBDAV_START["Aggiorna config e avvia WebDAV"]:::actionNode --> SAMBA_CHECK
-    WEBDAV_CHECK -- "No" --> SAMBA_CHECK{"Samba abilitato?"}:::decisionNode
-    SAMBA_CHECK -- "Sì" --> SAMBA_RELOAD["Ricarica configurazione Samba"]:::actionNode --> NOTIFY_OK
-    SAMBA_CHECK -- "No" --> NOTIFY_OK["Notifica Discord unlock ed esegui df -h"]:::actionNode
-
-    %% FASE 6: MODALITÀ RUNTIME
-    NOTIFY_OK --> EXEC_MODE{"Modalita di Esecuzione"}:::decisionNode
-    
-    EXEC_MODE -- "Demone o WebUI" --> DISARM_TRAP["Disarma Trap SIGINT"]:::actionNode
-    DISARM_TRAP --> EXIT_0_DAEMON(["SESSIONE ATTIVA E MONTATA - exit 0"]):::successNode
-
-    EXEC_MODE -- "CLI Interattiva" --> WATCHDOG_LOOP["Loop Monitor IO ogni 15s o tasto INVIO"]:::actionNode
-    WATCHDOG_LOOP --> WD_EVENT{"Evento Rilevato"}:::decisionNode
-    WD_EVENT -- "Tasto INVIO premuto" --> TEARDOWN_ENTRY
-    WD_EVENT -- "Inattivita IO maggiore di timeout" --> WD_NOTIFY["Notifica Discord watchdog"]:::actionNode --> TEARDOWN_ENTRY
-
-    %% SEQUENZA ATOMICA DI TEARDOWN
-    subgraph TEARDOWN_BLOCK [SEQUENZA DI TEARDOWN SICURO]
-        TEARDOWN_ENTRY["Disabilita Traps di Errore ed Interruzione"]:::teardownNode --> T_GUARD{"TEARDOWN_DONE gia true?"}:::decisionNode
-        T_GUARD -- "Sì" --> T_DONE(["return 0"]):::teardownNode
-        T_GUARD -- "No" --> T_SET["TEARDOWN_DONE = true"]:::teardownNode
-        
-        T_SET --> T_TGT["Salva target device PRIMA dello smontaggio"]:::teardownNode
-        T_TGT --> T_WD["1. Stop WebDAV"]:::teardownNode
-        T_WD --> T_SYNC["2. Flush buffer kernel con sync"]:::teardownNode
-        
-        T_SYNC --> T_MNT_CHK{"Filesystem montati?"}:::decisionNode
-        T_MNT_CHK -- "Sì" --> T_FUSER["fuser kill sui mountpoint"]:::teardownNode
-        T_FUSER --> T_UMOUNT["umount pulito o lazy fallback"]:::teardownNode --> T_LUKS_CHK
-        T_MNT_CHK -- "No" --> T_LUKS_CHK{"LUKS Mapper aperto?"}:::decisionNode
-        
-        T_LUKS_CHK -- "Sì" --> T_LUKS_CLOSE["cryptsetup close con retry e fallback"]:::teardownNode --> T_LVM_CHK
-        T_LUKS_CHK -- "No" --> T_LVM_CHK["vgchange -an VG_NAME"]:::teardownNode
-        
-        T_LVM_CHK --> T_SYS_GUARD{"target_dev e disco di sistema OS?"}:::decisionNode
-        T_SYS_GUARD -- "Sì Protezione" --> T_ABORT_SCSI["Ignora comandi SCSI spegnimento"]:::teardownNode --> T_HA_CUT
-        T_SYS_GUARD -- "No Disco esterno" --> T_SCSI["3. udisksctl power-off: SCSI STOP UNIT"]:::teardownNode
-        T_SCSI --> T_SCSI_WAIT["Loop attesa rimozione da sys block max 10s"]:::teardownNode
-        T_SCSI_WAIT --> T_SCSI_FALLBACK{"Disconnesso da kernel?"}:::decisionNode
-        T_SCSI_FALLBACK -- "No" --> T_SPIN_SLEEP["Attesa spindown 3s"]:::teardownNode --> T_HA_CUT
-        T_SCSI_FALLBACK -- "Sì" --> T_HA_CUT{"Home Assistant abilitato e Presa ON?"}:::decisionNode
-        
-        T_HA_CUT -- "Sì" --> T_GRACE["4. Pausa di tolleranza pre-cutoff di 5s"]:::teardownNode
-        T_GRACE --> T_HA_OFF["5. curl POST switch/turn_off"]:::teardownNode
-        T_HA_OFF --> T_END_OK["Wipe variabile PASSPHRASE in memoria"]:::teardownNode
-        T_HA_CUT -- "No" --> T_END_OK
-    end
-
-    T_END_OK --> FINAL_EXIT(["DISCO INERTE E 0W STANDBY"]):::startNode
-      </pre>
+  <!-- 0. INIZIALIZZAZIONE & LOCKING -->
+  <div class="section-title"><span>🛡️</span> 0. Inizializzazione, Permessi & Locking</div>
+  <div class="flow-tree">
+    <div class="flow-step">
+      <div class="step-header">
+        <span class="step-title"><span class="step-number" style="background:#1e293b; color:#38bdf8;">0</span> Verifica Privilegi Root & Lock Esclusivo</span>
+      </div>
+      <div class="branches">
+        <div class="branch-card warn">
+          <div class="branch-title">Esecuzione Non-Root (UID != 0)</div>
+          <div class="branch-desc">Richiede password con <code>exec sudo "" "$@"</code> e riavvia lo script preservando i parametri CLI.</div>
+        </div>
+        <div class="branch-card error">
+          <div class="branch-title">Lock File Occupato (/run/luks-manager.lock)</div>
+          <div class="branch-desc">Se un'altra istanza è già in esecuzione, <code>flock -n 200</code> fallisce ed esce immediatamente con <code>exit 1</code> per evitare corruzione.</div>
+        </div>
+        <div class="branch-card action">
+          <div class="branch-title">Buffer Sicuro STDIN in RAM</div>
+          <div class="branch-desc">Se lo script riceve la chiave via pipe o socket, la salva subito su file temporaneo in RAM (<code>/dev/shm/luks_key.XXXXXX</code> con permessi 600).</div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <div class="legend">
-    <div class="legend-item"><div class="legend-box" style="background:#38bdf8;"></div><span>Punti di Inizio / Fine</span></div>
-    <div class="legend-item"><div class="legend-box" style="background:#818cf8;"></div><span>Decisioni & Condizioni (if/else)</span></div>
-    <div class="legend-item"><div class="legend-box" style="background:#475569;"></div><span>Azioni & Comandi Eseguiti</span></div>
-    <div class="legend-item"><div class="legend-box" style="background:#f97316;"></div><span>Sequenza Teardown & Spegnimento</span></div>
-    <div class="legend-item"><div class="legend-box" style="background:#ef4444;"></div><span>Rami di Errore / Abort</span></div>
-    <div class="legend-item"><div class="legend-box" style="background:#10b981;"></div><span>Stato Attivo Operativo</span></div>
+  <div class="arrow-down">↓</div>
+
+  <!-- 1. DISPATCH COMANDI -->
+  <div class="section-title"><span>🔀</span> 1. Dispatch Comandi</div>
+  <div class="branches" style="margin-top:0;">
+    <div class="branch-card action">
+      <div class="branch-title">Comando: <code>status</code></div>
+      <div class="branch-desc">Interroga HA, Volume Group, LUKS, Mount e WebDAV. Stampa il report in console ed esce con <code>exit 0</code> senza modificare nulla.</div>
+    </div>
+    <div class="branch-card teardown">
+      <div class="branch-title">Comando: <code>stop</code> / <code>lock</code></div>
+      <div class="branch-desc">Salta direttamente alla <strong>Sequenza di Teardown Sicuro</strong> in fondo.</div>
+    </div>
+    <div class="branch-card success">
+      <div class="branch-title">Comando: <code>start</code> / <code>unlock</code></div>
+      <div class="branch-desc">Arma le trap di sicurezza per i segnali (<code>SIGINT</code>, <code>SIGTERM</code>, <code>SIGHUP</code>) e procede alle fasi di avvio.</div>
+    </div>
   </div>
 
-  <div class="hint">
-    💡 Trascina con il mouse per spostarti &bull; Usa la rotella per zoomare
+  <div class="arrow-down">↓</div>
+
+  <!-- FASI DI AVVIO -->
+  <div class="section-title"><span>🟢</span> 2. Sequenza di Avvio & Sblocco (Start / Unlock)</div>
+  <div class="flow-tree">
+
+    <!-- FASE 1 -->
+    <div class="flow-step">
+      <div class="step-header">
+        <span class="step-title"><span class="step-number" style="background:#10b981; color:#fff;">1</span> Alimentazione Presa 220V (Home Assistant)</span>
+      </div>
+      <div class="branches">
+        <div class="branch-card action">
+          <div class="branch-title">Home Assistant Abilitato</div>
+          <div class="branch-desc">Invia <code>curl POST /api/services/switch/turn_on</code> con timeout rigidi di 4s. Attende in polling fino a <code>HA_WAIT_TIMEOUT</code> (15s) la conferma <code>state: "on"</code>.</div>
+        </div>
+        <div class="branch-card error">
+          <div class="branch-title">Errore Connessione / Timeout Presa</div>
+          <div class="branch-desc">Se HA è irraggiungibile o la presa non si accende entro 15s: notifica Discord, arresta la procedura ed esce (senza toccare il disco).</div>
+        </div>
+        <div class="branch-card warn">
+          <div class="branch-title">Home Assistant Disabilitato</div>
+          <div class="branch-desc">Se <code>ENABLE_HOME_ASSISTANT=false</code>, salta direttamente all'attesa disco.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow-down">↓</div>
+
+    <!-- FASE 2 -->
+    <div class="flow-step">
+      <div class="step-header">
+        <span class="step-title"><span class="step-number" style="background:#10b981; color:#fff;">2</span> Rilevamento Hardware sul Bus USB & Spin-up</span>
+      </div>
+      <div class="branches">
+        <div class="branch-card action">
+          <div class="branch-title">Loop di Rilevamento (max 40s)</div>
+          <div class="branch-desc">Attende che il disco completi lo spin-up meccanico. Esegue <code>pvscan</code> e <code>vgscan --mknodes</code> cercando il Volume Group configurato (<code>mybook</code>).</div>
+        </div>
+        <div class="branch-card error">
+          <div class="branch-title">Disco Non Rilevato Entro 40s</div>
+          <div class="branch-desc">Notifica Discord di errore ed esegue il <strong>Teardown di sicurezza</strong> (spegnendo la presa 220V per non lasciarla accesa a vuoto).</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow-down">↓</div>
+
+    <!-- FASE 3 -->
+    <div class="flow-step">
+      <div class="step-header">
+        <span class="step-title"><span class="step-number" style="background:#10b981; color:#fff;">3</span> Attivazione LVM (Volume Group)</span>
+      </div>
+      <div class="branch-card action">
+        <div class="branch-title">Attivazione Nodi Logici</div>
+        <div class="branch-desc">Esegue <code>vgchange -ay mybook</code>. Rende disponibili i nodi <code>/dev/mybook/crypto_data</code> e <code>/dev/mybook/backup_data</code> nel kernel.</div>
+      </div>
+    </div>
+
+    <div class="arrow-down">↓</div>
+
+    <!-- FASE 4 -->
+    <div class="flow-step">
+      <div class="step-header">
+        <span class="step-title"><span class="step-number" style="background:#10b981; color:#fff;">4</span> Sblocco Crittografico LUKS2 in RAM</span>
+      </div>
+      <div class="branches">
+        <div class="branch-card action">
+          <div class="branch-title">Caso A: File Chiave CLI (<code>--keyfile</code>)</div>
+          <div class="branch-desc">Sblocca con <code>cryptsetup open /dev/mybook/crypto_data cryptovault --key-file &lt;path&gt;</code>.</div>
+        </div>
+        <div class="branch-card action">
+          <div class="branch-title">Caso B: STDIN / WebUI Stego Socket</div>
+          <div class="branch-desc">Passa il file temporaneo in RAM da <code>/dev/shm</code>, sblocca il volume e fa subito <code>shred -u</code> del buffer di memoria.</div>
+        </div>
+        <div class="branch-card action">
+          <div class="branch-title">Caso C: TTY Interattivo (Passphrase)</div>
+          <div class="branch-desc">Prompt mascherato da terminale (fino a 3 tentativi massimi).</div>
+        </div>
+        <div class="branch-card error">
+          <div class="branch-title">Chiave / Passphrase Errata</div>
+          <div class="branch-desc">Se lo sblocco fallisce: notifica Discord di allarme, azzera la variabile di memoria e avvia il <strong>Teardown Sicuro</strong> con spegnimento della presa.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow-down">↓</div>
+
+    <!-- FASE 5 -->
+    <div class="flow-step">
+      <div class="step-header">
+        <span class="step-title"><span class="step-number" style="background:#10b981; color:#fff;">5</span> Montaggio Filesystem Unificato & Avvio Servizi</span>
+      </div>
+      <div class="branches">
+        <div class="branch-card success">
+          <div class="branch-title">Mount Dati Cifrati (ext4)</div>
+          <div class="branch-desc">Monta <code>/dev/mapper/cryptovault</code> su <code>/srv/storage/crypto_data</code> con flag <code>noatime,nodev,nosuid</code>. Applica permessi gruppo <code>storage</code> (SGID 2775).</div>
+        </div>
+        <div class="branch-card success">
+          <div class="branch-title">Mount Secondo Volume (Opzionale)</div>
+          <div class="branch-desc">Se configurato <code>LV_BACKUP</code>, monta <code>/dev/mybook/backup_data</code> su <code>/srv/storage/backup_data</code> con permessi gruppo <code>storage</code>.</div>
+        </div>
+        <div class="branch-card action">
+          <div class="branch-title">Riavvio WebDAV / Samba</div>
+          <div class="branch-desc">Aggiorna la radice in <code>/etc/webdav/config.yaml</code> e riavvia <code>webdav.service</code>.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow-down">↓</div>
+
+    <!-- FASE 6 -->
+    <div class="flow-step">
+      <div class="step-header">
+        <span class="step-title"><span class="step-number" style="background:#38bdf8; color:#000;">6</span> Modalità di Esecuzione & Watchdog Inattività</span>
+      </div>
+      <div class="branches">
+        <div class="branch-card success">
+          <div class="branch-title">Modalità Demone / WebUI (<code>--no-watchdog</code>)</div>
+          <div class="branch-desc">Disarma la trap di uscita e termina lo script con <code>exit 0</code> lasciando lo storage montato e pronto all'uso.</div>
+        </div>
+        <div class="branch-card warn">
+          <div class="branch-title">Modalità Interattiva da Terminale CLI</div>
+          <div class="branch-desc">Resta in ascolto: monitora le statistiche di I/O del disco ogni 15s. Se non ci sono letture/scritture per più di <code>IDLE_TIMEOUT_MIN</code> (o se l'utente preme INVIO), avvia il Teardown automatico.</div>
+        </div>
+      </div>
+    </div>
+
   </div>
 
-  <script>
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: 'dark',
-      securityLevel: 'loose',
-      flowchart: {
-        useMaxWidth: false,
-        htmlLabels: true,
-        curve: 'basis'
-      }
-    });
+  <!-- SEQUENZA DI TEARDOWN -->
+  <div class="teardown-box">
+    <h2><span>🛡️</span> 3. Sequenza di Teardown & Arresto Sicuro (safe_power_off_sequence)</h2>
+    <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:1.25rem;">Questa sequenza è <strong>atomica e irreversibile</strong>. Viene protetta disabilitando i segnali di interruzione (<code>trap '' ERR SIGINT SIGTERM</code>) per garantire che nessuna fase venga saltata.</p>
 
-    let panZoomInstance = null;
+    <div class="flow-tree">
+      <div class="branch-card teardown">
+        <div class="branch-title">1. Stop del Servizio WebDAV</div>
+        <div class="branch-desc">Esegue <code>systemctl stop webdav</code> chiudendo all'istante tutte le sessioni di rete dei client Windows/Mac/Linux per bloccare nuove scritture.</div>
+      </div>
 
-    window.addEventListener("load", async () => {
-      try {
-        await mermaid.run();
-        const svgElement = document.querySelector("#mermaidOutput svg");
-        if (svgElement) {
-          panZoomInstance = svgPanZoom(svgElement, {
-            zoomEnabled: true,
-            controlIconsEnabled: false,
-            fit: true,
-            center: true,
-            minZoom: 0.2,
-            maxZoom: 10,
-            zoomScaleSensitivity: 0.3
-          });
-        }
-      } catch (err) {
-        console.error("Mermaid error:", err);
-      }
-    });
-  </script>
+      <div class="branch-card teardown">
+        <div class="branch-title">2. Flush dei Buffer di Memoria (sync)</div>
+        <div class="branch-desc">Esegue <code>sync</code> per scaricare forzatamente tutti i blocchi dalla page cache della RAM sui piatti del disco fisico.</div>
+      </div>
+
+      <div class="branch-card teardown">
+        <div class="branch-title">3. Smontaggio Filesystem (umount)</div>
+        <div class="branch-desc">Termina processi rimasti aperti con <code>fuser -km -9</code> sui mountpoint. Smonta <code>/srv/storage/crypto_data</code> e <code>/srv/storage/backup_data</code> (con fallback su lazy unmount <code>umount -l</code> se occupati).</div>
+      </div>
+
+      <div class="branch-card teardown">
+        <div class="branch-title">4. Chiusura Container LUKS (Sigillo RAM)</div>
+        <div class="branch-desc">Esegue <code>cryptsetup close cryptovault</code> (con retry fino a 3 volte e fallback <code>dmsetup remove -f</code>). <strong>La Master Key viene istantaneamente distrutta dalla memoria volatile.</strong></div>
+      </div>
+
+      <div class="branch-card teardown">
+        <div class="branch-title">5. Disattivazione Volume Group LVM</div>
+        <div class="branch-desc">Esegue <code>vgchange -an mybook</code> rilasciando tutti i descrittori logici del kernel.</div>
+      </div>
+
+      <div class="branch-card teardown">
+        <div class="branch-title">6. Parcheggio Meccanico Testine SCSI (STOP UNIT)</div>
+        <div class="branch-desc">Invia il comando hardware <code>udisksctl power-off -b /dev/sdX</code>. Attende che il kernel confermi la disconnessione (fino a 10s) oppure applica una pausa di <code>SPINDOWN_WAIT_SEC</code> (3s) per consentire alle testine di raggiungere la rampa di parcheggio.</div>
+      </div>
+
+      <div class="branch-card teardown">
+        <div class="branch-title">7. Pausa di Tolleranza & Taglio Alimentazione 220V</div>
+        <div class="branch-desc">Attende la pausa di grazia <code>CUTOFF_GRACE_SEC</code> (5s) per garantire che i dischi siano completamente fermi. Invia <code>curl POST /api/services/switch/turn_off</code> a Home Assistant. <strong>Lo storage scende a 0 Watt di consumo.</strong></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
 </body>
 </html>
