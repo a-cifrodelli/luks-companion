@@ -721,10 +721,10 @@ async function downloadBlob(blob, filename, suggestedTypes = []) {
             const writable = await handle.createWritable();
             await writable.write(blob);
             await writable.close();
-            return;
+            return true;
         } catch (err) {
-            // If user cancels the Save dialog, do not trigger fallback
-            if (err.name === 'AbortError') return;
+            // If user cancels the Save dialog, do not trigger fallback and return false
+            if (err.name === 'AbortError') return false;
             // Otherwise, fall back to standard <a> download
         }
     }
@@ -738,6 +738,7 @@ async function downloadBlob(blob, filename, suggestedTypes = []) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    return true;
 }
 
 function downloadRawKeyfile() {
@@ -1034,15 +1035,19 @@ async function downloadHeaderBackup() {
         if (match && match[1]) filename = match[1];
 
         const blob = await res.blob();
-        await downloadBlob(blob, filename, [
+        const saved = await downloadBlob(blob, filename, [
             {
                 description: 'LUKS Header Backup File (*.header)',
                 accept: { 'application/octet-stream': ['.header'] }
             }
         ]);
 
-        logConsole(`✓ Backup Header LUKS (${blob.size} bytes) scaricato con successo: ${filename}`);
-        showToast("Backup Header Completato", `File ${filename} scaricato (${(blob.size / 1024 / 1024).toFixed(1)} MB)`, "success");
+        if (saved) {
+            logConsole(`✓ Backup Header LUKS (${blob.size} bytes) salvato con successo: ${filename}`);
+            showToast("Backup Header Salvato", `File ${filename} salvato (${(blob.size / 1024 / 1024).toFixed(1)} MB)`, "success");
+        } else {
+            logConsole("Salvataggio backup header annullato dall'utente.");
+        }
     } catch (err) {
         logConsole(`[ERRORE BACKUP] ${err.message}`);
         showToast("Errore Backup Header", err.message, "error");
