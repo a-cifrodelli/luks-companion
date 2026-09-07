@@ -116,41 +116,11 @@ def find_smartctl_bin():
             return cand
     return None
 
-def is_system_disk(dev_path):
-    if not dev_path or not os.path.exists(dev_path):
-        return False
-    try:
-        real_target = os.path.realpath(dev_path)
-        target_name = os.path.basename(real_target)
-        out = subprocess.check_output(
-            ["findmnt", "-n", "-o", "SOURCE", "/", "/boot", "/boot/firmware"],
-            stderr=subprocess.DEVNULL, text=True, timeout=2
-        ).strip()
-        for src in out.splitlines():
-            src = src.strip()
-            if not src:
-                continue
-            src_real = os.path.realpath(src)
-            if real_target == src_real:
-                return True
-            try:
-                parent = subprocess.check_output(
-                    ["lsblk", "-no", "PKNAME", src_real],
-                    stderr=subprocess.DEVNULL, text=True, timeout=1
-                ).strip()
-                if parent and (f"/dev/{parent}" == real_target or target_name == parent):
-                    return True
-            except Exception:
-                pass
-    except Exception:
-        pass
-    return False
-
 def find_target_block_device(vg_name, mapper_name, mount_crypto, target_dev_cfg):
-    if target_dev_cfg and os.path.exists(target_dev_cfg) and not is_system_disk(target_dev_cfg):
+    if target_dev_cfg and os.path.exists(target_dev_cfg):
         return target_dev_cfg
 
-    # Priority 1: Trace back from mapper, mountpoint, or VG device node using lsblk -s
+    # Priority 1: Trace from active mapper or VG device node using lsblk -s
     candidates_to_trace = []
     if mapper_name and os.path.exists(f"/dev/mapper/{mapper_name}"):
         candidates_to_trace.append(f"/dev/mapper/{mapper_name}")
@@ -168,39 +138,34 @@ def find_target_block_device(vg_name, mapper_name, mount_crypto, target_dev_cfg)
             for line in out.splitlines():
                 parts = line.strip().split()
                 if len(parts) >= 2 and parts[1].lower() == "disk" and os.path.exists(parts[0]):
-                    if not is_system_disk(parts[0]):
-                        return parts[0]
+                    return parts[0]
         except Exception:
             pass
 
-    # Priority 2: Query LVM physical volumes directly (matching VG name if provided)
-    try:
-        cmd = ["pvs", "--noheadings", "-o", "pv_name,vg_name"]
-        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True, timeout=2).strip()
-        for line in out.splitlines():
-            parts = line.strip().split()
-            if not parts:
-                continue
-            pv = parts[0]
-            pv_vg = parts[1] if len(parts) > 1 else ""
-            if vg_name and pv_vg and pv_vg != vg_name:
-                continue
-            if pv and os.path.exists(pv) and not is_system_disk(pv):
-                try:
-                    pout = subprocess.check_output(
-                        ["lsblk", "-s", "-rno", "PATH,TYPE", pv],
-                        stderr=subprocess.DEVNULL, text=True, timeout=2
-                    ).strip()
-                    for pline in pout.splitlines():
-                        pparts = pline.strip().split()
-                        if len(pparts) >= 2 and pparts[1].lower() == "disk" and os.path.exists(pparts[0]):
-                            if not is_system_disk(pparts[0]):
+    # Priority 2: Query LVM physical volumes strictly belonging to the configured VG
+    if vg_name:
+        try:
+            out = subprocess.check_output(
+                ["pvs", "--noheadings", "-o", "pv_name", "-S", f"vg_name={vg_name}"],
+                stderr=subprocess.DEVNULL, text=True, timeout=2
+            ).strip()
+            for pv in out.splitlines():
+                pv = pv.strip()
+                if pv and os.path.exists(pv):
+                    try:
+                        pout = subprocess.check_output(
+                            ["lsblk", "-s", "-rno", "PATH,TYPE", pv],
+                            stderr=subprocess.DEVNULL, text=True, timeout=2
+                        ).strip()
+                        for pline in pout.splitlines():
+                            pparts = pline.strip().split()
+                            if len(pparts) >= 2 and pparts[1].lower() == "disk" and os.path.exists(pparts[0]):
                                 return pparts[0]
-                except Exception:
-                    pass
-                return pv
-    except Exception:
-        pass
+                    except Exception:
+                        pass
+                    return pv
+        except Exception:
+            pass
 
     return None
 
@@ -208,7 +173,7 @@ def get_smart_data(target_dev):
     smartctl = find_smartctl_bin()
     if not smartctl:
         return {"supported": False, "installed": False, "reason": "smartctl non installato (sudo pacman -S smartmontools)"}
-    if not target_dev or not os.path.exists(target_dev) or is_system_disk(target_dev):
+    if not target_dev or not os.path.exists(target_dev):
         return {"supported": False, "installed": True, "device": None, "reason": "Disco spento / inerte (0W Standby)"}
 
     # Try standard probe first, then SAT (SCSI to ATA Translation) fallback
@@ -273,7 +238,7 @@ def get_status():
 
     # Check physical block device presence on USB/SCSI bus (strictly ignoring OS system disk)
     target_dev = find_target_block_device(vg_name, mapper_name, mount_crypto, target_dev_cfg)
-    disk_present = target_dev is not None and os.path.exists(target_dev) and not is_system_disk(target_dev)
+    disk_present = target_dev is not None and os.path.exists(target_dev)
 
     is_mounted = os.path.ismount(mount_crypto) if mount_crypto else False
     is_unlocked = (os.path.exists(f"/dev/mapper/{mapper_name}") and disk_present) if mapper_name else False
