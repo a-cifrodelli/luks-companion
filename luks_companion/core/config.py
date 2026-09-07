@@ -4,6 +4,7 @@ Loads, parses, and validates .env parameters with typed fallbacks.
 """
 from dataclasses import dataclass, field
 import os
+import posixpath
 from typing import Optional, Dict, Any
 
 
@@ -50,11 +51,11 @@ class Config:
     # Dynamic paths
     @property
     def mount_crypto(self) -> str:
-        return os.path.join(self.storage_base, self.mapper_name)
+        return posixpath.join(self.storage_base, self.mapper_name)
 
     @property
     def mount_backup(self) -> str:
-        return os.path.join(self.storage_base, self.lv_backup) if self.lv_backup else ""
+        return posixpath.join(self.storage_base, self.lv_backup) if self.lv_backup else ""
 
     @property
     def lv_crypto_path(self) -> str:

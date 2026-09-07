@@ -70,6 +70,11 @@ def main():
     p_web = subparsers.add_parser("web", help="Avvia il gateway web HTTP")
     p_web.add_argument("--drop-privileges", type=str, default="luks-web", help="Utente a cui cedere i privilegi di root")
 
+    # NOTIFY
+    p_notify = subparsers.add_parser("notify", help="Invia una notifica via Webhook Discord (test, unlock, lock, watchdog, error)")
+    p_notify.add_argument("event", nargs="?", default="test", help="Tipo evento (test, unlock, lock, watchdog, error)")
+    p_notify.add_argument("message", nargs="?", default="", help="Messaggio o dettaglio personalizzato")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -202,6 +207,20 @@ def main():
         engine = StorageEngine(cfg)
         engine.restore_luks_header(hdr_bytes)
         print("[✓] Header LUKS2 ripristinato con successo!")
+
+    # 9. NOTIFY
+    elif args.command == "notify":
+        from .core.notify import send_discord_notification
+        print(f"[*] Invio notifica Discord ('{args.event}')...")
+        success = send_discord_notification(cfg, args.event, args.message)
+        if success:
+            print(f"[✓] Notifica '{args.event}' inviata con successo su Discord!")
+        else:
+            if not cfg.discord_webhook_url:
+                print("[!] DISCORD_WEBHOOK_URL non configurata in .env.", file=sys.stderr)
+            else:
+                print("[✗] Invio notifica fallito. Verificare la validità del Webhook URL in .env.", file=sys.stderr)
+        sys.exit(0 if success else 1)
 
 
 if __name__ == "__main__":

@@ -86,8 +86,7 @@ class IdleWatchdog(threading.Thread):
                         if self.on_idle_timeout:
                             self.on_idle_timeout()
                         else:
-                            self.engine.stop()
-                            self.engine.notify_discord("watchdog", f"Arresto automatico per inattività ({timeout_min}m)")
+                            self.engine.stop(notify_event="watchdog")
 
                         self.idle_seconds = 0
                         self.last_stats = None

@@ -51,15 +51,20 @@ class StorageEngine:
     def notify_discord(self, event: str, message: str = "") -> None:
         if not self.config.discord_webhook_url:
             return
-        notify_script = os.path.join(self.config.base_dir, "scripts", "notify-discord.py")
-        if os.path.exists(notify_script):
-            try:
-                self.runner.run(
-                    [sys.executable, notify_script, event, message],
-                    timeout=5.0,
-                )
-            except Exception:
-                pass
+        try:
+            from .notify import send_discord_notification
+            send_discord_notification(self.config, event, message)
+        except Exception:
+            # Fallback to external script if present
+            notify_script = os.path.join(self.config.base_dir, "scripts", "notify-discord.py")
+            if os.path.exists(notify_script):
+                try:
+                    self.runner.run(
+                        [sys.executable, notify_script, event, message],
+                        timeout=10.0,
+                    )
+                except Exception:
+                    pass
 
     # -------------------------------------------------------------------
     # HARDWARE & BLOCK DEVICE DISCOVERY
@@ -315,7 +320,7 @@ class StorageEngine:
             if isinstance(exc, StorageEngineError):
                 self.log(exc.format_detailed(), log_cb)
             self.notify_discord("error", str(exc))
-            self.safe_teardown(log_cb=log_cb)
+            self.safe_teardown(log_cb=log_cb, notify_event="")
             raise
 
     def _unlock_luks_container(
@@ -400,7 +405,11 @@ class StorageEngine:
     # -------------------------------------------------------------------
     # LIFECYCLE: TEARDOWN SICURO (8 PASSI ATOMICI & IDEMPOTENTI)
     # -------------------------------------------------------------------
-    def safe_teardown(self, log_cb: Optional[Callable[[str], None]] = None) -> bool:
+    def safe_teardown(
+        self,
+        log_cb: Optional[Callable[[str], None]] = None,
+        notify_event: str = "lock",
+    ) -> bool:
         """
         Executes the safe, deterministic teardown sequence in reverse order.
         Idempotent: safe against re-entrancy and double calls.
@@ -510,10 +519,12 @@ class StorageEngine:
 
         # STEP 8: COMPLETION
         self.log("  [✓] [8/8] Teardown completato. Il disco è in Standby a 0 Watt.", log_cb)
+        if notify_event:
+            self.notify_discord(notify_event, "Storage smontato e alimentazione 220V interrotta (0W Standby)")
         return True
 
-    def stop(self, log_cb: Optional[Callable[[str], None]] = None) -> bool:
-        return self.safe_teardown(log_cb=log_cb)
+    def stop(self, log_cb: Optional[Callable[[str], None]] = None, notify_event: str = "lock") -> bool:
+        return self.safe_teardown(log_cb=log_cb, notify_event=notify_event)
 
     # -------------------------------------------------------------------
     # DISASTER RECOVERY: LUKS HEADER BACKUP & RESTORE

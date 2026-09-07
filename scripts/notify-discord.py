@@ -32,6 +32,29 @@ def load_env():
     return env
 
 def main():
+    try:
+        if REPO_DIR not in sys.path:
+            sys.path.insert(0, REPO_DIR)
+        from luks_companion.core.config import Config
+        from luks_companion.core.notify import send_discord_notification
+
+        cfg = Config.from_env_file(ENV_FILE)
+        event = sys.argv[1] if len(sys.argv) > 1 else "test"
+        custom_msg = sys.argv[2] if len(sys.argv) > 2 else ""
+
+        if not cfg.discord_webhook_url or not cfg.discord_webhook_url.startswith("https://"):
+            sys.exit(0)
+
+        success = send_discord_notification(cfg, event, custom_msg)
+        if sys.stdout.isatty():
+            if success:
+                print(f"[✓] Notifica Discord inviata con successo ({event})!")
+            else:
+                print(f"[✗] Errore invio notifica Discord ({event}).", file=sys.stderr)
+        sys.exit(0 if success else 1)
+    except Exception:
+        pass
+
     env = load_env()
     webhook_url = env.get("DISCORD_WEBHOOK_URL", "").strip()
 
