@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="it">
 <head>
   <meta charset="UTF-8">
@@ -163,7 +163,7 @@ flowchart TD
     classDef teardownNode fill:#431407,stroke:#f97316,stroke-width:2px,color:#fdba74;
 
     START(["🚀 AVVIO luks-manager.sh"]) :::startNode --> ROOT{"UID == 0 (root)?"}:::decisionNode
-    ROOT -- "No" --> SUDO["exec sudo  $@"]:::actionNode --> FLOCK
+    ROOT -- "No" --> SUDO["exec sudo luks-manager.sh"]:::actionNode --> FLOCK
     ROOT -- "Sì" --> FLOCK{"flock -n /run/luks-manager.lock"}:::decisionNode
     
     FLOCK -- "Occupato (Altra istanza)" --> ERR_LOCK["❌ ERRORE: Lock occupato -> exit 1"]:::errorNode
@@ -172,7 +172,7 @@ flowchart TD
     
     LOAD_ENV -- "No" --> ERR_ENV["❌ ERRORE: .env mancante -> exit 1"]:::errorNode
     LOAD_ENV -- "Sì" --> PARSE_ARGS["Carica env & Parsing argomenti CLI"]:::actionNode
-    PARSE_ARGS --> CMD_DISPATCH{"Comando ()"}:::decisionNode
+    PARSE_ARGS --> CMD_DISPATCH{"Comando CLI o Demone"}:::decisionNode
 
     %% RAMO STATUS
     CMD_DISPATCH -- "status" --> ST_QUERY["Interroga HA, LVM, LUKS, Mount, WebDAV"]:::actionNode
@@ -183,13 +183,13 @@ flowchart TD
 
     %% RAMO START
     CMD_DISPATCH -- "start / unlock" --> TRAP_INIT["Arma Traps: SIGINT, SIGTERM, SIGHUP -> trap_cleanup"]:::actionNode
-    TRAP_INIT --> HA_CHECK{"ENABLE_HOME_ASSISTANT == true?"}:::decisionNode
+    TRAP_INIT --> HA_CHECK{"ENABLE_HOME_ASSISTANT abilitato?"}:::decisionNode
 
     %% FASE 1: POWER ON
-    HA_CHECK -- "false" --> DISK_WAIT
-    HA_CHECK -- "true" --> HA_ON["curl POST switch/turn_on (timeout 4s)"]:::actionNode
+    HA_CHECK -- "No" --> DISK_WAIT
+    HA_CHECK -- "Sì" --> HA_ON["curl POST switch/turn_on (timeout 4s)"]:::actionNode
     HA_ON --> HA_ON_RES{"Chiamata riuscita?"}:::decisionNode
-    HA_ON_RES -- "No" --> ERR_HA1["❌ Notifica Discord & Errore HA -> exit 1 (Presa non toccata)"]:::errorNode
+    HA_ON_RES -- "No" --> ERR_HA1["❌ Notifica Discord & Errore HA -> exit 1"]:::errorNode
     HA_ON_RES -- "Sì" --> HA_POLL["Loop attesa stato 'on' (max HA_WAIT_TIMEOUT sec)"]:::actionNode
     HA_POLL --> HA_POLL_RES{"Stato == 'on'?"}:::decisionNode
     HA_POLL_RES -- "Timeout" --> ERR_HA2["❌ Timeout accensione presa"]:::errorNode --> TEARDOWN_ENTRY
@@ -207,7 +207,7 @@ flowchart TD
     LUKS_ALREADY -- "Sì" --> MOUNT_PHASE
     LUKS_ALREADY -- "No" --> KEY_SRC{"Origine Chiave"}:::decisionNode
 
-    KEY_SRC -- "--keyfile <path>" --> KF_EXISTS{"File esiste?"}:::decisionNode
+    KEY_SRC -- "Opzione --keyfile percorso" --> KF_EXISTS{"File esiste?"}:::decisionNode
     KF_EXISTS -- "No" --> ERR_KF["❌ File chiave non trovato"]:::errorNode --> TEARDOWN_ENTRY
     KF_EXISTS -- "Sì" --> KF_OPEN["cryptsetup open --key-file"]:::actionNode
     KF_OPEN --> KF_RES{"Sblocco riuscito?"}:::decisionNode
@@ -230,10 +230,10 @@ flowchart TD
     MOUNT_PHASE --> MOUNT_EXT4["mount /dev/mapper/cryptovault /srv/storage/crypto_data"]:::actionNode
     MOUNT_EXT4 --> MOUNT_BKP{"LV_BACKUP configurato?"}:::decisionNode
     MOUNT_BKP -- "Sì" --> MOUNT_BKP_EXEC["mount /dev/VG/backup_data /srv/storage/backup_data"]:::actionNode --> WEBDAV_CHECK
-    MOUNT_BKP -- "No" --> WEBDAV_CHECK{"ENABLE_WEBDAV == true?"}:::decisionNode
+    MOUNT_BKP -- "No" --> WEBDAV_CHECK{"ENABLE_WEBDAV abilitato?"}:::decisionNode
 
     WEBDAV_CHECK -- "Sì" --> WEBDAV_START["Aggiorna config.yaml & systemctl restart webdav"]:::actionNode --> SAMBA_CHECK
-    WEBDAV_CHECK -- "No" --> SAMBA_CHECK{"RELOAD_SAMBA == true?"}:::decisionNode
+    WEBDAV_CHECK -- "No" --> SAMBA_CHECK{"RELOAD_SAMBA abilitato?"}:::decisionNode
     SAMBA_CHECK -- "Sì" --> SAMBA_RELOAD["smbcontrol all reload-config"]:::actionNode --> NOTIFY_OK
     SAMBA_CHECK -- "No" --> NOTIFY_OK["notify_discord unlock && df -h"]:::actionNode
 
@@ -252,7 +252,7 @@ flowchart TD
     %% SEQUENZA ATOMICA DI TEARDOWN (safe_power_off_sequence)
     %% =========================================================
     subgraph TEARDOWN_BLOCK ["🛡️ SEQUENZA DI TEARDOWN SICURO (safe_power_off_sequence)"]
-        TEARDOWN_ENTRY["Disabilita Traps: trap '' ERR SIGINT SIGTERM"]:::teardownNode --> T_GUARD{"TEARDOWN_DONE == true?"}:::decisionNode
+        TEARDOWN_ENTRY["Disabilita Traps di Errore ed Interruzione"]:::teardownNode --> T_GUARD{"TEARDOWN_DONE == true?"}:::decisionNode
         T_GUARD -- "Sì (Già eseguito)" --> T_DONE(["return 0"]):::teardownNode
         T_GUARD -- "No" --> T_SET["TEARDOWN_DONE = true"]:::teardownNode
         
@@ -274,12 +274,12 @@ flowchart TD
         T_SCSI --> T_SCSI_WAIT["Loop attesa rimozione da /sys/block/ (max 10s)"]:::teardownNode
         T_SCSI_WAIT --> T_SCSI_FALLBACK{"Disconnesso da kernel?"}:::decisionNode
         T_SCSI_FALLBACK -- "No" --> T_SPIN_SLEEP["sleep SPINDOWN_WAIT_SEC (3s)"]:::teardownNode --> T_HA_CUT
-        T_SCSI_FALLBACK -- "Sì" --> T_HA_CUT{"ENABLE_HOME_ASSISTANT && (POWER_IS_ON || state=='on')"}:::decisionNode
+        T_SCSI_FALLBACK -- "Sì" --> T_HA_CUT{"Home Assistant abilitato e Presa ON?"}:::decisionNode
         
-        T_HA_CUT -- "true" --> T_GRACE["4. Pausa di tolleranza pre-cutoff (CUTOFF_GRACE_SEC = 5s)"]:::teardownNode
+        T_HA_CUT -- "Sì" --> T_GRACE["4. Pausa di tolleranza pre-cutoff (CUTOFF_GRACE_SEC = 5s)"]:::teardownNode
         T_GRACE --> T_HA_OFF["5. curl POST switch/turn_off (Home Assistant)"]:::teardownNode
         T_HA_OFF --> T_END_OK["Wipe variabile PASSPHRASE in memoria"]:::teardownNode
-        T_HA_CUT -- "false" --> T_END_OK
+        T_HA_CUT -- "No" --> T_END_OK
     end
 
     T_END_OK --> FINAL_EXIT(["🔴 DISCO INERTE & 0W STANDBY (exit)"]):::startNode
