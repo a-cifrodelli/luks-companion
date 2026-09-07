@@ -67,40 +67,100 @@ function showToast(title, message, type = "info", duration = 5000) {
     }
 }
 
-// // -------------------------------------------------------------------
-// 1. STATUS POLLING & UI UPDATE
 // -------------------------------------------------------------------
+// 1. MVP UI STATE MANAGER (Presenter & Real-time Event Binding)
+// -------------------------------------------------------------------
+const UIState = {
+    isOperating: false,
+    activePhase: "idle", // 'idle' | 'unlocking' | 'stopping'
+
+    setPhase(title, badgeClass, isOperating = true) {
+        this.isOperating = isOperating;
+        this.activePhase = isOperating ? "operating" : "idle";
+        const masterBadge = document.getElementById("masterStatusBadge");
+        const masterText = document.getElementById("masterStatusText");
+        if (masterBadge && masterText) {
+            masterBadge.className = `badge ${badgeClass || 'badge-amber'} ${isOperating ? 'badge-pulse' : ''}`;
+            masterText.textContent = title;
+        }
+    },
+
+    setCard(name, status, valText, metaText) {
+        // name: 'Lvm', 'Luks', 'Mount', 'Webdav'
+        // status: 'idle' | 'busy' | 'success' | 'error'
+        const card = document.getElementById(`card${name}`);
+        const icon = document.getElementById(`icon${name}`);
+        const val = document.getElementById(`val${name}`);
+        const meta = document.getElementById(`meta${name}`);
+
+        if (card) {
+            card.classList.remove("card-busy", "card-success", "card-error");
+            if (status === "busy") card.classList.add("card-busy");
+            else if (status === "success") card.classList.add("card-success");
+            else if (status === "error") card.classList.add("card-error");
+        }
+
+        if (icon) {
+            icon.className = `card-icon icon-${status}`;
+        }
+
+        if (val && valText !== undefined && valText !== null) {
+            val.textContent = valText;
+        }
+
+        if (meta && metaText !== undefined && metaText !== null) {
+            meta.textContent = metaText;
+        }
+    },
+
+    resetAllCards() {
+        ["Lvm", "Luks", "Mount", "Webdav"].forEach(name => {
+            const card = document.getElementById(`card${name}`);
+            const icon = document.getElementById(`icon${name}`);
+            if (card) card.classList.remove("card-busy", "card-success", "card-error");
+            if (icon) icon.className = "card-icon";
+        });
+    }
+};
+
 function applyStatusData(data) {
     if (!data) return;
 
-    // Global Master Status Badge
-    const masterBadge = document.getElementById("masterStatusBadge");
-    const masterText = document.getElementById("masterStatusText");
-    if (data.status === "mounted") {
-        masterBadge.className = "badge badge-green";
-        masterText.textContent = "MONTATO & OPERATIVO";
-    } else if (data.status === "unlocked") {
-        masterBadge.className = "badge badge-amber";
-        masterText.textContent = "SBLOCCATO (SMONTATO)";
-    } else {
-        masterBadge.className = "badge badge-red";
-        masterText.textContent = "SPENTO / 0W STANDBY";
+    // Only update master status badge and card values if NOT currently in an active animated operation!
+    if (!UIState.isOperating) {
+        const masterBadge = document.getElementById("masterStatusBadge");
+        const masterText = document.getElementById("masterStatusText");
+        if (data.status === "mounted") {
+            if (masterBadge) masterBadge.className = "badge badge-green";
+            if (masterText) masterText.textContent = "MONTATO & OPERATIVO";
+            UIState.setCard("Lvm", "success", `Attivo (${data.vg_name || 'LVM'})`, "Volume Group Pronto");
+            UIState.setCard("Luks", "success", `Sbloccato (/dev/mapper/${data.mapper_name || '...'})`, "Chiave in RAM (dm-crypt)");
+            UIState.setCard("Mount", "success", data.mount_crypto || "Montato", "Local Filesystem ext4");
+            const webdavPortStr = data.webdav_port ? ` (Porta ${data.webdav_port})` : "";
+            UIState.setCard("Webdav", data.webdav_active ? "success" : "idle", data.webdav_active ? `Attivo${webdavPortStr}` : "Inattivo", "Mount Diretto Filesystem");
+        } else if (data.status === "unlocked") {
+            if (masterBadge) masterBadge.className = "badge badge-amber";
+            if (masterText) masterText.textContent = "SBLOCCATO (SMONTATO)";
+            UIState.setCard("Lvm", "success", `Attivo (${data.vg_name || 'LVM'})`, "Volume Group Pronto");
+            UIState.setCard("Luks", "success", `Sbloccato (/dev/mapper/${data.mapper_name || '...'})`, "Chiave in RAM (dm-crypt)");
+            UIState.setCard("Mount", "idle", "Non montato", "Local Filesystem");
+            UIState.setCard("Webdav", "idle", "Inattivo", "Mount Diretto Filesystem");
+        } else {
+            if (masterBadge) masterBadge.className = "badge badge-red";
+            if (masterText) masterText.textContent = "SPENTO / 0W STANDBY";
+            UIState.setCard("Lvm", "idle", "Disattivato", "Kernel Module dm-mod");
+            UIState.setCard("Luks", "idle", "Sigillato (0 byte in RAM)", "RAM Key Management");
+            UIState.setCard("Mount", "idle", "Non montato", "Local Filesystem");
+            UIState.setCard("Webdav", "idle", "Inattivo", "Mount Diretto Filesystem");
+        }
     }
-
-    // Cards
-    document.getElementById("valLvm").textContent = data.vg_active ? `Attivo (${data.vg_name})` : "Disattivato";
-    document.getElementById("valLuks").textContent = data.unlocked ? `Sbloccato (/dev/mapper/${data.mapper_name || '...' })` : "Sigillato (0 byte in RAM)";
-    document.getElementById("valMount").textContent = data.mounted ? (data.mount_crypto || "Montato") : "Non montato";
-    
-    const webdavPortStr = data.webdav_port ? ` (Porta ${data.webdav_port})` : "";
-    document.getElementById("valWebdav").textContent = data.webdav_active ? `Attivo${webdavPortStr}` : "Inattivo";
 
     // Telemetry: S.M.A.R.T. & Hardware Health
     const badgeSmartHealth = document.getElementById("badgeSmartHealth");
     const badgeSmartTemp = document.getElementById("badgeSmartTemp");
     const badgeSmartDevice = document.getElementById("badgeSmartDevice");
 
-    if (data.status === "stopped") {
+    if (data.status === "stopped" && !UIState.isOperating) {
         if (badgeSmartHealth) {
             badgeSmartHealth.className = "badge badge-gray";
             badgeSmartHealth.textContent = "S.M.A.R.T.: Standby";
@@ -157,7 +217,7 @@ function applyStatusData(data) {
             if (smart.model) {
                 const devName = smart.device ? ` (${smart.device})` : "";
                 badgeSmartDevice.textContent = `Disco: ${smart.model}${devName}`;
-            } else {
+            } else if (!UIState.isOperating) {
                 badgeSmartDevice.textContent = "Disco: Attivo";
             }
         }
@@ -190,9 +250,9 @@ function applyStatusData(data) {
                 `;
             });
             volContainer.innerHTML = html;
-        } else if (data.status === "stopped") {
+        } else if (data.status === "stopped" && !UIState.isOperating) {
             volContainer.innerHTML = `<div class="volume-placeholder"><span>Storage in standby (0W). I dettagli dello spazio disco e telemetria S.M.A.R.T. saranno disponibili allo sblocco.</span></div>`;
-        } else {
+        } else if (!UIState.isOperating) {
             volContainer.innerHTML = `<div class="volume-placeholder"><span>Nessun volume attualmente montato.</span></div>`;
         }
     }
@@ -210,7 +270,7 @@ async function updateStatus() {
             const unlockBtn = document.getElementById("btnUnlock");
             const stopBtn = document.getElementById("btnStop");
 
-            if (data.busy) {
+            if (data.busy || UIState.isOperating) {
                 if (data.status === "mounted" || data.status === "unlocked" || data.mounted || data.unlocked) {
                     if (stopBtn) {
                         stopBtn.disabled = true;
@@ -253,10 +313,12 @@ async function updateStatus() {
             }
         }
     } catch (err) {
-        const masterBadge = document.getElementById("masterStatusBadge");
-        const masterText = document.getElementById("masterStatusText");
-        if (masterBadge) masterBadge.className = "badge badge-red";
-        if (masterText) masterText.textContent = "DISCONNESSO DAL DEMONE";
+        if (!UIState.isOperating) {
+            const masterBadge = document.getElementById("masterStatusBadge");
+            const masterText = document.getElementById("masterStatusText");
+            if (masterBadge) masterBadge.className = "badge badge-red";
+            if (masterText) masterText.textContent = "DISCONNESSO DAL DEMONE";
+        }
     }
 }
 
@@ -434,10 +496,11 @@ async function performUnlock() {
     unlockBtn.disabled = true;
     unlockBtn.textContent = "⏳ Sblocco in corso...";
 
-    const masterBadge = document.getElementById("masterStatusBadge");
-    const masterText = document.getElementById("masterStatusText");
-    if (masterBadge) masterBadge.className = "badge badge-amber";
-    if (masterText) masterText.textContent = "SBLOCCO IN CORSO...";
+    UIState.setPhase("⚡ AVVIO & ACCENSIONE PRESA...", "badge-amber", true);
+    UIState.setCard("Lvm", "idle", "In attesa alimentazione...", "Presa 220V in avvio");
+    UIState.setCard("Luks", "idle", "In attesa sblocco...", "Chiave protetta");
+    UIState.setCard("Mount", "idle", "In attesa sblocco...", "Filesystem chiuso");
+    UIState.setCard("Webdav", "idle", "Inattivo", "Servizio in attesa");
 
     let payload = {};
 
@@ -448,6 +511,7 @@ async function performUnlock() {
                 showToast("Attenzione", "Inserire la passphrase prima di continuare.", "warning");
                 unlockBtn.disabled = false;
                 unlockBtn.textContent = "🔑 Sblocca Storage";
+                UIState.setPhase("SPENTO / 0W STANDBY", "badge-red", false);
                 return;
             }
             payload.passphrase = passphrase;
@@ -458,6 +522,7 @@ async function performUnlock() {
                 showToast("Attenzione", "Selezionare o trascinare un file chiave (.key/.bin) valido.", "warning");
                 unlockBtn.disabled = false;
                 unlockBtn.textContent = "🔑 Sblocca Storage";
+                UIState.setPhase("SPENTO / 0W STANDBY", "badge-red", false);
                 return;
             }
             payload.keyfile_base64 = selectedKeyfileBase64;
@@ -468,6 +533,7 @@ async function performUnlock() {
                 showToast("Attenzione", "Selezionare o trascinare una foto stenografica valida.", "warning");
                 unlockBtn.disabled = false;
                 unlockBtn.textContent = "🔑 Sblocca Storage";
+                UIState.setPhase("SPENTO / 0W STANDBY", "badge-red", false);
                 return;
             }
 
@@ -486,39 +552,50 @@ async function performUnlock() {
             body: JSON.stringify(payload)
         });
 
+        let finalData = null;
         const json = await processNdjsonStream(
             res,
             (line) => {
                 logConsole(line);
-                // Real-time progressive step updates
-                if (line.includes("[1/7]")) {
-                    if (masterText) masterText.textContent = "⚡ ACCENSIONE PRESA...";
-                } else if (line.includes("[2/7]")) {
-                    if (masterText) masterText.textContent = "🔌 ATTESA DISCO USB...";
-                } else if (line.includes("[3/7]")) {
-                    if (masterText) masterText.textContent = "📦 ATTIVAZIONE LVM...";
-                    const lvmEl = document.getElementById("valLvm");
-                    if (lvmEl) lvmEl.textContent = "Attivazione...";
-                } else if (line.includes("[4/7]")) {
-                    if (masterText) masterText.textContent = "🔑 SBLOCCO LUKS IN RAM...";
-                } else if (line.includes("[5/7]")) {
-                    if (masterText) masterText.textContent = "📁 MONTAGGIO FILESYSTEM...";
-                    const luksEl = document.getElementById("valLuks");
-                    if (luksEl) luksEl.textContent = "Sbloccato (RAM)";
+                // Real-time progressive step updates (talking icons & states)
+                if (line.includes("[1/7]") || line.includes("Home Assistant")) {
+                    UIState.setPhase("⚡ ACCENSIONE PRESA 220V...", "badge-amber");
+                } else if (line.includes("Presa smart alimentata")) {
+                    UIState.setPhase("⚡ PRESA ALIMENTATA (ATTESA USB)", "badge-amber");
+                } else if (line.includes("[2/7]") || line.includes("kernel Linux")) {
+                    UIState.setPhase("🔌 ATTESA DISCO SUL BUS USB...", "badge-amber");
+                    UIState.setCard("Lvm", "busy", "Rilevamento hardware...", "Attesa bus USB / udev");
+                } else if (line.includes("Disco rilevato")) {
+                    UIState.setPhase("🔌 DISCO USB CONNESSO", "badge-amber");
+                    UIState.setCard("Lvm", "busy", "Disco USB pronto", "Inizializzazione LVM...");
+                } else if (line.includes("[3/7]") || line.includes("Volume Group")) {
+                    UIState.setPhase("📦 ATTIVAZIONE LVM...", "badge-amber");
+                    UIState.setCard("Lvm", "busy", "Attivazione Volume Group...", "vgchange -ay");
+                } else if (line.includes("[4/7]") || line.includes("LUKS2")) {
+                    UIState.setPhase("🔑 SBLOCCO LUKS IN RAM...", "badge-amber");
+                    UIState.setCard("Lvm", "success", "Volume Group Attivo", "LVM pronto");
+                    UIState.setCard("Luks", "busy", "Decifratura master key...", "cryptsetup in RAM");
+                } else if (line.includes("Volume sbloccato")) {
+                    UIState.setCard("Luks", "success", "Sbloccato in RAM", "Container LUKS2 Aperto");
+                } else if (line.includes("[5/7]") || line.includes("Montaggio")) {
+                    UIState.setPhase("📁 MONTAGGIO FILESYSTEM...", "badge-amber");
+                    UIState.setCard("Mount", "busy", "Montaggio ext4...", "Punto di Mount");
+                } else if (line.includes("Dati Cifrati montati")) {
+                    UIState.setCard("Mount", "success", "Montato e Accessibile", "Filesystem Operativo");
                 } else if (line.includes("[6/7]") || line.includes("WebDAV")) {
-                    if (masterText) masterText.textContent = "🌐 AVVIO SERVIZI...";
-                    const mountEl = document.getElementById("valMount");
-                    if (mountEl) mountEl.textContent = "Montato";
+                    UIState.setPhase("🌐 AVVIO SERVIZIO WEBDAV...", "badge-amber");
+                    UIState.setCard("Webdav", "busy", "Avvio servizio...", "Porta WebDAV");
                 }
             },
             (data) => {
-                applyStatusData(data);
+                finalData = data;
             }
         );
 
         if (json && json.status === "ok") {
             logConsole(`[SUCCESSO] ${json.message}`);
             showToast("Volume Sbloccato", json.message || "Storage montato e pronto all'uso!", "success");
+            UIState.setPhase("MONTATO & OPERATIVO", "badge-green", false);
             
             // Clear sensitive input
             document.getElementById("inputPassphrase").value = "";
@@ -529,14 +606,21 @@ async function performUnlock() {
             if (kTxt) kTxt.style.display = "none";
             const sTxt = document.getElementById("stegoSelectedText");
             if (sTxt) sTxt.style.display = "none";
+
+            if (json.data || finalData) {
+                applyStatusData(json.data || finalData);
+            }
         } else {
             const errMsg = (json && json.message) || "Impossibile sbloccare il container LUKS";
             logConsole(`[ERRORE] ${errMsg}`);
             showToast("Errore Sblocco", errMsg, "error");
+            UIState.setPhase("⚠️ ERRORE SBLOCCO", "badge-red", false);
+            if (json && json.data) applyStatusData(json.data);
         }
     } catch (err) {
         logConsole(`[ERRORE] ${err.message}`);
         showToast("Errore", err.message, "error");
+        UIState.setPhase("⚠️ ERRORE CONNESSIONE", "badge-red", false);
     } finally {
         unlockBtn.textContent = "🔑 Sblocca Storage";
         updateStatus();
@@ -764,11 +848,7 @@ async function confirmStop() {
     stopBtn.disabled = true;
     stopBtn.textContent = "⏳ Arresto in corso...";
 
-    const masterBadge = document.getElementById("masterStatusBadge");
-    const masterText = document.getElementById("masterStatusText");
-    if (masterBadge) masterBadge.className = "badge badge-amber";
-    if (masterText) masterText.textContent = "ARRESTO IN CORSO...";
-
+    UIState.setPhase("🛑 ARRESTO & TEARDOWN SICURO...", "badge-amber", true);
     logConsole("Avvio procedura di arresto e spegnimento 220V...");
 
     try {
@@ -778,42 +858,48 @@ async function confirmStop() {
             body: JSON.stringify({})
         });
 
+        let finalData = null;
         const json = await processNdjsonStream(
             res,
             (line) => {
                 logConsole(line);
                 if (line.includes("WebDAV")) {
-                    const wEl = document.getElementById("valWebdav");
-                    if (wEl) wEl.textContent = "Inattivo";
+                    UIState.setCard("Webdav", "idle", "Inattivo", "Servizio arrestato");
                 } else if (line.includes("Smontaggio") || line.includes("umount")) {
-                    const mEl = document.getElementById("valMount");
-                    if (mEl) mEl.textContent = "Smontato";
+                    UIState.setCard("Mount", "idle", "Smontato", "Filesystem rilasciato");
                 } else if (line.includes("Chiusura container LUKS")) {
-                    const luksEl = document.getElementById("valLuks");
-                    if (luksEl) luksEl.textContent = "Sigillato (0 byte)";
+                    UIState.setCard("Luks", "idle", "Sigillato (0 byte)", "Chiave distrutta da RAM");
                 } else if (line.includes("Disattivazione Volume Group")) {
-                    const lvmEl = document.getElementById("valLvm");
-                    if (lvmEl) lvmEl.textContent = "Disattivato";
+                    UIState.setCard("Lvm", "idle", "Disattivato", "LVM disattivato");
+                } else if (line.includes("SCSI STOP UNIT") || line.includes("parcheggio")) {
+                    UIState.setPhase("💽 PARCHEGGIO TESTINE SCSI...", "badge-amber");
                 } else if (line.includes("Spegnimento alimentazione")) {
-                    if (masterText) masterText.textContent = "⚡ SPEGNIMENTO 220V...";
+                    UIState.setPhase("⚡ SPEGNIMENTO PRESA 220V...", "badge-amber");
                 }
             },
             (data) => {
-                applyStatusData(data);
+                finalData = data;
             }
         );
 
         if (json && json.status === "ok") {
             logConsole(`[SUCCESSO] ${json.message}`);
             showToast("Arresto Completato", json.message || "Filesystem smontati e alimentazione 220V disattivata.", "success");
+            UIState.setPhase("SPENTO / 0W STANDBY", "badge-red", false);
+            UIState.resetAllCards();
+            if (json.data || finalData) {
+                applyStatusData(json.data || finalData);
+            }
         } else {
             const errMsg = (json && json.message) || "Errore durante l'arresto";
             logConsole(`[ERRORE] ${errMsg}`);
             showToast("Errore Arresto", errMsg, "error");
+            UIState.setPhase("⚠️ ERRORE ARRESTO", "badge-red", false);
         }
     } catch (err) {
         logConsole(`[ERRORE RETE] ${err.message}`);
         showToast("Errore di Rete", err.message, "error");
+        UIState.setPhase("⚠️ ERRORE RETE", "badge-red", false);
     } finally {
         stopBtn.textContent = "🛑 Espelli & Spegni 220V";
         updateStatus();
