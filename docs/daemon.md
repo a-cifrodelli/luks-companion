@@ -10,28 +10,28 @@ In modern home servers and NAS appliances, Web interfaces (e.g. FastAPI, Node.js
 
 Granting these unprivileged web processes full `sudo` access or storing SSH root keys on the webserver introduces severe security risks.
 
-The **LUKS Manager Socket Daemon** solves this by listening on a local **UNIX Domain Socket** (`/run/luks-manager.sock`) configured with `0666` permissions:
+The **LUKS Manager Socket Daemon** solves this by listening on a local **UNIX Domain Socket** (`/run/luks-manager.sock`) configured with restrictive `0660 root:luks-web` permissions (or `0666` fallback):
 
 ```mermaid
 flowchart LR
-    subgraph WEB ["🌐 Web Tier (Unprivileged)"]
-        UI["Web Frontend / Mobile"] --> API["Web API Backend<br/><i>(Node / Python / Go)</i>"]
+    subgraph WEB ["🌐 Web Tier (Unprivileged: luks-web)"]
+        UI["Web Frontend / Mobile"] --> API["Web API Gateway<br/><i>(web/server.py)</i>"]
     end
 
     subgraph SOCK ["🔌 Socket Layer"]
-        Socket[("<b>/run/luks-manager.sock</b><br/><i>(mode: 0666)</i>")]
+        Socket[("<b>/run/luks-manager.sock</b><br/><i>(mode: 0660 root:luks-web)</i>")]
     end
 
     subgraph SYSTEM ["🛡️ Root Subsystem (luks-managerd)"]
-        Daemon["<b>luks-managerd.service</b><br/><i>(root daemon)</i>"]
-        Manager["<b>luks-manager.sh</b><br/><i>(Atomic Execution)</i>"]
+        Daemon["<b>luks-managerd.service</b><br/><i>(root master daemon)</i>"]
+        Engine["<b>StorageEngine</b><br/><i>(Unified Python Core)</i>"]
         Storage["LUKS2 + LVM + WebDAV + HA"]
     end
 
     API -->|JSON Request| Socket
     Socket -->|IPC| Daemon
-    Daemon -->|Executes Subcommands| Manager
-    Manager -->|Orchestrates| Storage
+    Daemon -->|Orchestrates| Engine
+    Engine -->|Direct Control| Storage
     Daemon -->|JSON Response| Socket
     Socket -->|Returns Result| API
 ```

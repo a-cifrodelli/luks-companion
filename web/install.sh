@@ -32,6 +32,17 @@ fi
 
 echo -e "${CLR_BCYAN}=== LUKS MANAGER: INSTALLAZIONE WEB APP DASHBOARD ===${CLR_RESET}"
 
+# Ensure luks-web group and user exist
+if ! getent group luks-web >/dev/null 2>&1; then
+    echo -e "  [*] Creazione gruppo di sistema 'luks-web'..."
+    groupadd -r luks-web || true
+fi
+
+if ! id -u luks-web >/dev/null 2>&1; then
+    echo -e "  [*] Creazione utente non privilegiato 'luks-web'..."
+    useradd -r -s /usr/bin/nologin -g luks-web -d "${REPO_DIR}" luks-web || true
+fi
+
 # Set executable permissions
 chmod +x "${SCRIPT_DIR}/server.py"
 

@@ -31,6 +31,12 @@ fi
 
 echo -e "${CLR_BCYAN}=== LUKS MANAGER: INSTALLAZIONE DEMONE SOCKET API ===${CLR_RESET}"
 
+# Ensure luks-web group exists for socket IPC isolation
+if ! getent group luks-web >/dev/null 2>&1; then
+    echo -e "  [*] Creazione gruppo di sistema 'luks-web' per isolamento socket..."
+    groupadd -r luks-web || true
+fi
+
 # Set executable permissions
 chmod +x "${SCRIPT_DIR}/luks-managerd.py"
 chmod +x "${REPO_DIR}/luks-manager.sh"

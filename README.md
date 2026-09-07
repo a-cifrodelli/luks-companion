@@ -164,46 +164,90 @@ sudo apt update && sudo apt install -y cryptsetup lvm2 udisks2 psmisc curl socat
 
 ---
 
-## 💻 CLI Usage
+## 💻 CLI Usage (`luks-companion`)
 
-The core script `luks-manager.sh` supports atomic subcommands:
+La nuova CLI unificata in Python fornisce controllo completo, diagnostica dettagliata ed elevazione automatica dei permessi.
+
+> [!TIP]
+> **Retrocompatibilità**: Puoi continuare a usare `./luks-manager.sh` come di consueto; reindirizzerà automaticamente a `python3 -m luks_companion`.
 
 ### 1. Avvio Interattivo (Start / Unlock)
-Powers on the plug, activates LVM, decrypts LUKS via interactive passphrase prompt, mounts filesystems, starts WebDAV, and enters the idle watchdog loop:
+Accende la presa, rileva il disco USB, attiva LVM, sblocca LUKS2 via prompt passphrase o `--keyfile`, monta i filesystem, avvia WebDAV ed entra nel monitor watchdog:
 ```bash
-./luks-manager.sh
-# oppure: ./luks-manager.sh start
+python3 -m luks_companion start
+# oppure con keyfile:
+python3 -m luks_companion start --keyfile /percorso/chiave.bin
+# oppure con il wrapper retrocompatibile:
+./luks-manager.sh start
 ```
-*Press `[ENTER]` at any time to initiate safe teardown and power cutoff.*
+*Premi `[INVIO]` in qualsiasi momento per avviare il teardown sicuro e lo spegnimento.*
 
 ### 2. Arresto Immediato (Stop / Lock)
-Safely stops WebDAV, unmounts filesystems, seals LUKS, deactivates LVM, parks drive heads, and cuts 220V power:
+Esegue la sequenza atomica di teardown in 8 passi (stop WebDAV, sync, unmount, distruzione chiave LUKS in RAM, disattivazione LVM, parcheggio testine SCSI e cutoff 220V):
 ```bash
-./luks-manager.sh stop
+python3 -m luks_companion stop
 ```
 
 ### 3. Verifica Stato (Status)
-Inspects live power, LVM, LUKS, mount, and WebDAV state:
+Mostra lo stato istantaneo dello storage, della presa smart e della telemetria S.M.A.R.T.:
 ```bash
-./luks-manager.sh status
+python3 -m luks_companion status
+# Formato JSON per script esterni:
+python3 -m luks_companion status --json
+```
+
+### 4. Check-up Diagnostico Trasparente (Diagnose)
+Elimina ogni opacità ("fare il rabdomante") in caso di errori: scansiona permessi, connettività Home Assistant, dischi fisici USB, LVM, container LUKS, mountpoint e servizi systemd con report dettagliato e suggerimenti d'azione immediati:
+```bash
+python3 -m luks_companion diagnose
+```
+
+### 5. Disaster Recovery Header LUKS2 (Backup & Restore)
+Esegue il backup dei metadati LUKS2 in un file locale sicuro o ne ripristina uno precedentemente salvato:
+```bash
+# Backup header
+python3 -m luks_companion backup-header --out /root/backup_header.bin
+
+# Ripristino header (richiede conferma esplicita e volume chiuso)
+python3 -m luks_companion restore-header /root/backup_header.bin
 ```
 
 ---
 
-## 🌐 Socket Daemon & Web Dashboard
+## 🧪 Suite di Test Automatica (`run_tests.py`)
 
-### 1. Avvio del Demone Socket (Root IPC)
+Il progetto include una suite completa di unit test (`pytest`) eseguibile su qualsiasi macchina (anche in ambiente di sviluppo locale Windows o Linux senza dischi fisici collegati):
+```bash
+python run_tests.py
+```
+Copre al 100%:
+* Atomicità ed idempotenza del Teardown in tutti gli scenari d'errore (fallimento presa HA, mancato rilevamento USB, password errata, doppio stop consecutivo).
+* Sequenza di avvio, sblocco da RAM buffer e montaggio volumi.
+* Diagnostica di sistema e rilevamento anomalie.
+* Monitoraggio I/O del Watchdog e trigger di inattività.
+* Conformità del Privilege Dropping POSIX.
+* Telemetria S.M.A.R.T. SAT e rilevamento Standby a 0W.
+
+---
+
+## 🌐 Socket Daemon & Web Dashboard (Privilege Separation)
+
+L'architettura separa rigorosamente i privilegi:
+- **Master Daemon (`luks-managerd.service`)**: Gira come `root` per gestire i dispositivi a blocchi, LVM e LUKS, ascoltando su `/run/luks-manager.sock` con permessi ristretti `0660 root:luks-web`.
+- **Web Dashboard Gateway (`luks-web.service`)**: Gira come utente non privilegiato `luks-web`, servendo l'interfaccia grafica e comunicando con il socket IPC.
+
+### 1. Installazione Demone Master (Root IPC)
 ```bash
 sudo ./daemon/install.sh
 ```
 
-### 2. Avvio della Web Dashboard (Default: Porta 9099)
+### 2. Installazione Web Dashboard (Default: Porta 9099)
 ```bash
 sudo ./web/install.sh
 ```
 La dashboard HTTP si avvia sulla porta configurata in `.env` (`WEB_PORT=9099`):
 * **Accesso diretto HTTP**: `http://<IP_DEL_SERVER>:9099`
-* **Terminazione TLS / HTTPS**: Se desideri esporla su HTTPS con certificato SSL, configura il tuo reverse proxy preferito (Traefik, Nginx, Caddy, Apache) inoltrando le richieste verso `http://127.0.0.1:9099`. (Vedi [docs/web.md](docs/web.md) per dettagli ed esempi).
+* **Terminazione TLS / HTTPS**: Per esporla su HTTPS, configura un reverse proxy (Nginx, Caddy, Traefik) verso `http://127.0.0.1:9099`. (Vedi [docs/web.md](docs/web.md)).
 
 ---
 

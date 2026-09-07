@@ -11,7 +11,20 @@ This document covers the **threat model**, **LUKS2 key management**, **steganogr
 | **Server/MicroSD Theft** | No keyfiles or passphrases stored on Raspberry Pi storage. | Storage remains an opaque encrypted block device (LUKS2 Argon2id). |
 | **Physical Disk Interception** | 220V relay cutoff + SCSI spindown + landing ramp park. | Heads are parked safely; disk contains encrypted ciphertext. |
 | **Malicious Network Scan** | WebDAV / WebApp / LVM / LUKS are completely stopped when idle. | No active listening services or open mount points during standby. |
-| **Web Server Breach** | Web backend runs as unprivileged user communicating over UNIX socket. | Attacker cannot access root shell or steal master encryption keys. |
+| **Web Server Breach** | Web backend runs as unprivileged `luks-web` user communicating over UNIX socket (`0660`). | Attacker cannot access root shell or steal master encryption keys. |
+
+---
+
+## 🛡️ Privilege Dropping & Socket IPC Isolation
+
+To comply with the **Principle of Least Privilege**:
+1. **Separation of Concerns**:
+   - The **Master Daemon** runs as `root` because Linux storage management (`cryptsetup`, `vgchange`, `mount`, `udisksctl`) requires kernel block device privileges (`CAP_SYS_ADMIN`).
+   - The **Web Gateway** (`luks-web.service`) runs as an isolated system user `luks-web` (`/usr/bin/nologin`).
+2. **Restricted UNIX Socket Permissions (`0660`)**:
+   - The IPC socket `/run/luks-manager.sock` is owned by `root:luks-web` with file permissions `0660` (`srw-rw----`).
+   - Ordinary non-system users on the host cannot read from or write to the socket.
+   - Even if an attacker gains arbitrary remote code execution within the Web gateway, they are constrained within the unprivileged `luks-web` account and can only submit structured JSON API requests (`status`, `unlock`, `stop`, `diagnose`).
 
 ---
 
