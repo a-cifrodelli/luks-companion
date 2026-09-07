@@ -1,6 +1,6 @@
 # UNIX Domain Socket Daemon Guide 🔌
 
-This document describes the architecture, installation, API specification, and integration patterns for the **LUKS Manager Socket Daemon** (`daemon/luks-managerd.py`).
+This document describes the architecture, installation, API specification, and integration patterns for the **LUKS Manager Socket Daemon** (`luks_companion.daemon.server` / `daemon/luks-managerd.py`).
 
 ---
 
@@ -15,7 +15,7 @@ The **LUKS Manager Socket Daemon** solves this by listening on a local **UNIX Do
 ```mermaid
 flowchart LR
     subgraph WEB ["🌐 Web Tier (Unprivileged: luks-web)"]
-        UI["Web Frontend / Mobile"] --> API["Web API Gateway<br/><i>(web/server.py)</i>"]
+        UI["Web Frontend / Mobile"] --> API["Web API Gateway<br/><i>(ThreadingWebGatewayServer :9099)</i>"]
     end
 
     subgraph SOCK ["🔌 Socket Layer"]
@@ -32,9 +32,14 @@ flowchart LR
     Socket -->|IPC| Daemon
     Daemon -->|Orchestrates| Engine
     Engine -->|Direct Control| Storage
-    Daemon -->|JSON Response| Socket
+    Daemon -->|NDJSON Stream / Response| Socket
     Socket -->|Returns Result| API
 ```
+
+> [!TIP]
+> ### 🗺️ Lifecycle Flowchart
+> To inspect the complete state-machine diagram, including Home Assistant caching, USB polling, RAM decryption, and atomic teardown:
+> 👉 <a href="luks_manager_flowchart.html" target="_blank">**Open Interactive Flowchart in Browser (`docs/luks_manager_flowchart.html`)**</a>
 
 ---
 
@@ -193,6 +198,27 @@ All requests and responses are standard JSON objects transmitted over the UNIX D
   }
 }
 ```
+
+---
+
+### 4. 🔄 Real-Time Streaming Protocol (NDJSON)
+
+For long-running operations (`unlock` and `stop`), the daemon transmits **Newline Delimited JSON (NDJSON)** lines in real time across the UNIX socket connection. This enables frontends (such as the Web Dashboard) to render live progress bars and step-by-step terminal logs as they execute:
+
+#### Stream Sequence:
+1. **Progress events** (emitted progressively as each step completes):
+   ```json
+   {"event": "log", "line": "  [1/7] Accensione presa Home Assistant...", "data": {"status": "stopped", ...}}
+   {"event": "log", "line": "  [2/7] Rilevamento bus USB...", "data": {"status": "stopped", ...}}
+   ```
+2. **Terminal event** (emitted once when the operation finishes):
+   ```json
+   {"event": "done", "status": "ok", "message": "Volume sbloccato e montato con successo", "output": "...", "data": {"status": "mounted", ...}}
+   ```
+   *(In case of failure, `"status": "error"` is emitted with diagnostic details).*
+
+> [!NOTE]
+> **Backward-compatibility**: Clients that buffer the entire socket stream until EOF can inspect the last line for the final `"event": "done"` status, or iterate over lines to display interactive feedback.
 
 ---
 

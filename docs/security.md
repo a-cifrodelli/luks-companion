@@ -68,10 +68,11 @@ sudo cryptsetup luksDump /dev/vg_nas/lv_crypto
 From CLI on the server:
 ```bash
 # Direct CLI flag test
-sudo ./luks-manager.sh unlock --keyfile /path/to/vault.key
+sudo python3 -m luks_companion start --keyfile /path/to/vault.key
+# (oppure con wrapper: sudo ./luks-manager.sh start --keyfile /path/to/vault.key)
 
 # Or via stdin pipe (100% in-memory)
-cat vault.key | sudo ./luks-manager.sh unlock
+cat vault.key | sudo python3 -m luks_companion start
 ```
 
 ---
@@ -101,10 +102,10 @@ python3 scripts/stego.py embed -c photo.jpg -k vault.key -o secret_photo.jpg -p 
 ### 2. Extract Keyfile from Image
 
 #### Option A: Direct Unlock One-Liner via RAM Pipe (Zero Disk Trace)
-Estrae la chiave direttamente nei byte di input di `luks-manager.sh` senza mai salvare il file `.key` su disco:
+Estrae la chiave direttamente nei byte di input di `luks_companion` senza mai salvare il file `.key` su disco:
 
 ```bash
-python3 scripts/stego.py extract -i secret_photo.jpg -p "tua_password_segreta" | sudo ./luks-manager.sh unlock
+python3 scripts/stego.py extract -i secret_photo.jpg -p "tua_password_segreta" | sudo python3 -m luks_companion start
 ```
 
 #### Option B: Extract to a Local File
@@ -120,7 +121,7 @@ python3 scripts/stego.py extract -i secret_photo.jpg -p "tua_password_segreta" -
 cat wallpaper.jpg vault.key > secret_wallpaper.jpg
 
 # Extraction via tail:
-tail -c 512 secret_wallpaper.jpg | sudo ./luks-manager.sh unlock
+tail -c 512 secret_wallpaper.jpg | sudo python3 -m luks_companion start
 ```
 
 ---
@@ -143,3 +144,24 @@ tail -c 512 secret_wallpaper.jpg | sudo ./luks-manager.sh unlock
    # Or kill specific keyslot (e.g., keyslot 1)
    sudo cryptsetup luksKillSlot /dev/vg_nas/lv_crypto 1
    ```
+
+---
+
+## 💾 Disaster Recovery: LUKS2 Header Backup & Hygiene
+
+The LUKS2 header contains the primary cryptographic metadata, keyslots, and Argon2id parameters. If the drive experiences block corruption in sector 0-4MB, data cannot be recovered without a header backup.
+
+### 1. Creating an Offline Header Backup
+```bash
+# Genera un dump atomico dell'header LUKS2
+sudo python3 -m luks_companion backup-header --out /root/luks_header_cold_backup.bin
+chmod 400 /root/luks_header_cold_backup.bin
+```
+> [!CAUTION]
+> **Sicurezza del Backup**: Il file `.bin` dell'header contiene gli slot cifrati con Argon2id. Conservalo sempre offline su un supporto fisico separato (es. chiavetta USB cifrata in cassaforte).
+
+### 2. Restoring a Corrupted Header
+```bash
+# Ripristina l'header (richiede conferma esplicita e container chiuso)
+sudo python3 -m luks_companion restore-header /root/luks_header_cold_backup.bin
+```

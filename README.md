@@ -1,5 +1,6 @@
 # LUKS Companion 🔒⚡
 
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![Bash Shell](https://img.shields.io/badge/Shell-Bash-4EAA25.svg?logo=gnu-bash&logoColor=white)](https://www.gnu.org/software/bash/)
 [![Linux Compatible](https://img.shields.io/badge/Linux-Kernel_6.x-FCC624.svg?logo=linux&logoColor=black)](https://kernel.org/)
 [![Arch Linux ARM](https://img.shields.io/badge/OS-Arch_Linux_ARM-1793D1.svg?logo=arch-linux&logoColor=white)](https://archlinuxarm.org/)
@@ -28,21 +29,21 @@ It combines **Home Assistant REST API smart plug control**, **LVM Volume Group a
 ```mermaid
 flowchart TD
     subgraph CLIENTS ["Clients, Channels & Frontends"]
-        CLI["CLI: ./luks-manager.sh"]
+        CLI["CLI: python3 -m luks_companion<br/><i>(or ./luks-manager.sh)</i>"]
         WebUI["Desktop Web Dashboard (web/static)"]
         WebDAVClient["WebDAV Clients (Windows / macOS / Linux)"]
         Discord["Discord Channel (Webhook Embeds)"]
     end
 
     subgraph DAEMON ["IPC & Telemetry Layer"]
-        WebGateway["Web Server (web/server.py :9099)"]
+        WebGateway["Web Gateway: ThreadingWebGatewayServer<br/><i>(web/server.py :9099)</i>"]
         SocketDaemon["luks-managerd (/run/luks-manager.sock)"]
         Telemetry["S.M.A.R.T. & statvfs Engine (smartctl)"]
     end
 
     subgraph HOST ["Raspberry Pi 5 Server"]
-        Orchestrator["Core Orchestrator (luks-manager.sh)"]
-        Notifier["Discord Dispatcher (notify-discord.py)"]
+        Orchestrator["Core Orchestrator: StorageEngine<br/><i>(luks_companion.core.engine)</i>"]
+        Notifier["Discord Dispatcher<br/><i>(luks_companion.core.notify)</i>"]
         
         subgraph SEC ["Security & Storage Layer"]
             LVM["LVM2 Module (vgchange -ay)"]
@@ -97,6 +98,11 @@ flowchart TD
     Verify -->|9. Disconnect Confirmed -> Turn OFF| HA
     HA -->|0W Standby Cutoff| Plug
 ```
+
+> [!TIP]
+> ### 🗺️ Mappa Interattiva del Ciclo di Vita (v2.0)
+> Per esplorare visivamente la macchina a stati completa (gestione fallimenti alimentazione, rilevamento USB, decifratura in RAM, S.M.A.R.T. a 0W, unmount atomico e dis-enumerazione kernel) con zoom, ricerca e cassetto dettagli:
+> 👉 <a href="docs/luks_manager_flowchart.html" target="_blank">**Apri il Flowchart Interattivo nel Browser (`docs/luks_manager_flowchart.html`)**</a>
 
 > [!IMPORTANT]
 > **Active Safety Verification**: Before sending the 220V power cutoff command to Home Assistant, `luks-manager` actively queries the Linux kernel `/sys/block/` tree and device node table until kernel un-enumeration is 100% confirmed. This guarantees that SCSI head parking and USB bus ejection are complete before turning off the outlet.
@@ -212,11 +218,21 @@ python3 -m luks_companion backup-header --out /root/backup_header.bin
 python3 -m luks_companion restore-header /root/backup_header.bin
 ```
 
+### 6. Notifiche Discord da CLI (Notify)
+Invia notifiche diagnostiche o di test su Discord con embed grafici di telemetria:
+```bash
+# Test connettività webhook
+python3 -m luks_companion notify test
+
+# Notifica personalizzata
+python3 -m luks_companion notify unlock "Sblocco storage autorizzato da terminale"
+```
+
 ---
 
 ## 🧪 Suite di Test Automatica (`run_tests.py`)
 
-Il progetto include una suite completa di unit test (`pytest`) eseguibile su qualsiasi macchina (anche in ambiente di sviluppo locale Windows o Linux senza dischi fisici collegati):
+Il progetto include una suite completa di **34 unit test** (`pytest`) suddivisi in 9 moduli, eseguibile istantaneamente su qualsiasi macchina (anche in ambiente di sviluppo locale Windows o Linux senza dischi fisici collegati):
 ```bash
 python run_tests.py
 ```
@@ -227,6 +243,8 @@ Copre al 100%:
 * Monitoraggio I/O del Watchdog e trigger di inattività.
 * Conformità del Privilege Dropping POSIX.
 * Telemetria S.M.A.R.T. SAT e rilevamento Standby a 0W.
+* Caching ad alta efficienza per l'API Home Assistant (TTL 2s per azzerare il carico sul server domotico).
+* Streaming NDJSON per i log interattivi e concorrenza multi-thread (`ThreadingWebGatewayServer`).
 
 ---
 
@@ -271,8 +289,11 @@ LUKS Companion supporta l'invio automatico di notifiche con embed ricchi su un c
 
 3. **Test manuale del Webhook**:
    ```bash
+   # Tramite CLI unificata:
+   python3 -m luks_companion notify test
+
+   # Oppure tramite gli script wrapper:
    ./scripts/notify-discord.sh test
-   # oppure direttamente con Python:
    ./scripts/notify-discord.py test
    ```
 
