@@ -32,15 +32,24 @@ fi
 
 echo -e "${CLR_BCYAN}=== LUKS MANAGER: INSTALLAZIONE WEB APP DASHBOARD ===${CLR_RESET}"
 
-# Ensure luks-web group and user exist
+# Ensure luks-web group exists for socket IPC isolation
 if ! getent group luks-web >/dev/null 2>&1; then
     echo -e "  [*] Creazione gruppo di sistema 'luks-web'..."
     groupadd -r luks-web || true
 fi
 
-if ! id -u luks-web >/dev/null 2>&1; then
-    echo -e "  [*] Creazione utente non privilegiato 'luks-web'..."
-    useradd -r -s /usr/bin/nologin -g luks-web -d "${REPO_DIR}" luks-web || true
+# Detect owner of repository directory to prevent 200/CHDIR Permission Denied on /home/...
+REPO_OWNER=$(stat -c '%U' "$REPO_DIR" 2>/dev/null || echo "${SUDO_USER:-root}")
+if [ "$REPO_OWNER" = "root" ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+    REPO_OWNER="$SUDO_USER"
+fi
+
+if [ "$REPO_OWNER" != "root" ]; then
+    SERVICE_USER="$REPO_OWNER"
+    echo -e "  [*] Configurazione servizio per l'utente non privilegiato proprietario della directory: ${CLR_WHITE}${SERVICE_USER}${CLR_RESET}"
+    usermod -aG luks-web "$SERVICE_USER" || true
+else
+    SERVICE_USER="root"
 fi
 
 # Set executable permissions
@@ -48,7 +57,8 @@ chmod +x "${SCRIPT_DIR}/server.py"
 
 echo -e "\n${CLR_CYAN}[1/3] Generazione ${CLR_WHITE}${TARGET_SERVICE_FILE}${CLR_CYAN}...${CLR_RESET}"
 export REPO_DIR
-envsubst '$REPO_DIR' < "$SERVICE_TEMPLATE_FILE" > "$TARGET_SERVICE_FILE"
+export SERVICE_USER
+envsubst '$REPO_DIR $SERVICE_USER' < "$SERVICE_TEMPLATE_FILE" > "$TARGET_SERVICE_FILE"
 
 chmod 644 "$TARGET_SERVICE_FILE"
 echo -e "  ${CLR_GREEN}[✓] File di servizio systemd generato con successo.${CLR_RESET}"
