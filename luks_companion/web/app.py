@@ -8,7 +8,7 @@ import json
 import socket
 import mimetypes
 import base64
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 from typing import Optional, Dict, Any
 
@@ -57,13 +57,16 @@ class WebGatewayHandler(BaseHTTPRequestHandler):
         pass
 
     def send_json(self, data: dict, status_code: int = 200):
-        body = json.dumps(data).encode("utf-8")
-        self.send_response(status_code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            body = json.dumps(data).encode("utf-8")
+            self.send_response(status_code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def do_OPTIONS(self):
         self.send_response(200)
@@ -230,9 +233,14 @@ class WebGatewayHandler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
             self.wfile.write(content)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
         except Exception:
-            self.send_response(500)
-            self.end_headers()
+            try:
+                self.send_response(500)
+                self.end_headers()
+            except Exception:
+                pass
 
 
 def run_web_server(config: Optional[Config] = None, drop_privs_user: Optional[str] = None) -> None:
@@ -255,8 +263,9 @@ def run_web_server(config: Optional[Config] = None, drop_privs_user: Optional[st
     WebGatewayHandler.config = cfg
     WebGatewayHandler.static_dir = static_dir
 
-    server = HTTPServer((cfg.web_host, cfg.web_port), WebGatewayHandler)
-    print(f"[*] LUKS-Companion Web Gateway attivo su http://{cfg.web_host}:{cfg.web_port}")
+    server = ThreadingHTTPServer((cfg.web_host, cfg.web_port), WebGatewayHandler)
+    server.daemon_threads = True
+    print(f"[*] LUKS-Companion Web Gateway multithreading attivo su http://{cfg.web_host}:{cfg.web_port}")
     print(f"[*] Serving static assets da: {static_dir}")
     try:
         server.serve_forever()

@@ -180,7 +180,10 @@ function applyStatusData(data) {
 
         // 2. COMPOSITE MASTER STATUS BADGE
         if (masterBadge && masterText) {
-            if (data.mounted && data.webdav_active) {
+            if (data.busy) {
+                masterBadge.className = "badge badge-amber badge-pulse";
+                masterText.textContent = (data.mounted || data.unlocked) ? "OPERAZIONE IN CORSO..." : "SBLOCCO IN CORSO...";
+            } else if (data.mounted && data.webdav_active) {
                 masterBadge.className = "badge badge-green";
                 masterText.textContent = "MONTATO & OPERATIVO";
             } else if (data.mounted) {
