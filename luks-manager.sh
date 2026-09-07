@@ -185,46 +185,10 @@ ha_get_state() {
     echo "${res:-unknown}"
 }
 
-is_system_disk() {
-    local target="$1"
-    if [ -z "$target" ] || [ ! -b "$target" ]; then
-        return 1
-    fi
-
-    local target_real
-    target_real=$(readlink -f "$target" 2>/dev/null || echo "$target")
-    local target_name
-    target_name=$(basename "$target_real")
-
-    # Check root mount (/), boot mount (/boot), and system partitions
-    local sys_srcs
-    sys_srcs=$(findmnt -n -o SOURCE / /boot /boot/firmware 2>/dev/null || echo "")
-
-    for ssrc in $sys_srcs; do
-        if [ -z "$ssrc" ]; then continue; fi
-        local ssrc_real
-        ssrc_real=$(readlink -f "$ssrc" 2>/dev/null || echo "$ssrc")
-        local ssrc_parent
-        ssrc_parent=$(lsblk -no PKNAME "$ssrc_real" 2>/dev/null || echo "")
-
-        if [ "$target_real" = "$ssrc_real" ] || \
-           [ "$target_real" = "/dev/${ssrc_parent}" ] || \
-           [ "$target_name" = "$ssrc_parent" ]; then
-            return 0 # YES: THIS IS THE RASPBERRY PI OS SYSTEM DISK!
-        fi
-    done
-
-    return 1 # Safe: Not a system disk
-}
-
 detect_target_device() {
-    # 1. Resolve strictly via LVM Physical Volume for VG_NAME (completely silent)
+    # Resolve strictly via LVM Physical Volume for VG_NAME (completely silent)
     local pv_dev
     pv_dev=$(pvs --noheadings -o pv_name "$VG_NAME" 2>/dev/null | tr -d ' ' | head -n1 || echo "")
-    if [ -z "$pv_dev" ]; then
-        pv_dev=$(pvs --noheadings -o pv_name 2>/dev/null | tr -d ' ' | head -n1 || echo "")
-    fi
-
     if [ -n "$pv_dev" ] && [ -b "$pv_dev" ]; then
         local parent_disk
         parent_disk=$(lsblk -no PKNAME "$pv_dev" 2>/dev/null || echo "")
@@ -236,14 +200,10 @@ detect_target_device() {
         return
     fi
 
-    # 2. Check TARGET_DEV ONLY if set AND verified to contain VG_NAME AND not system disk
+    # Check TARGET_DEV if set in .env
     if [ -n "$TARGET_DEV" ] && [ -b "$TARGET_DEV" ]; then
-        if pvs "$TARGET_DEV" >/dev/null 2>&1 | grep -q "$VG_NAME"; then
-            if ! is_system_disk "$TARGET_DEV"; then
-                echo "$TARGET_DEV"
-                return
-            fi
-        fi
+        echo "$TARGET_DEV"
+        return
     fi
 
     echo ""
@@ -365,29 +325,25 @@ safe_power_off_sequence() {
     local final_dev
     final_dev=$(detect_target_device)
     if [ -n "$final_dev" ] && [ -b "$final_dev" ]; then
-        if is_system_disk "$final_dev"; then
-            echo "  [!] PROTEZIONE ATTIVA: $final_dev è il disco di sistema OS del Raspberry Pi! Comandi SCSI spegnimento annullati." >&2
-        else
-            local dev_name
-            dev_name=$(basename "$final_dev")
-            echo "  -> Invio comando SCSI STOP UNIT ed espulsione bus per $final_dev..."
-            udisksctl power-off -b "$final_dev" 2>/dev/null || true
+        local dev_name
+        dev_name=$(basename "$final_dev")
+        echo "  -> Invio comando SCSI STOP UNIT ed espulsione bus per $final_dev..."
+        udisksctl power-off -b "$final_dev" 2>/dev/null || true
 
-            echo "  -> Verifica attiva disconnessione hardware nel kernel Linux..."
-            local off_confirmed=false
-            for i in {1..10}; do
-                if [ ! -b "$final_dev" ] && [ ! -d "/sys/block/${dev_name}" ]; then
-                    off_confirmed=true
-                    echo "  [✓] Disconnessione confermata dal kernel! Il disco è inerte."
-                    break
-                fi
-                sleep 1
-            done
-
-            if [ "$off_confirmed" = false ]; then
-                echo "  [!] Attesa di sicurezza aggiuntiva prima del cutoff 220V..."
-                sleep "$SPINDOWN_WAIT_SEC"
+        echo "  -> Verifica attiva disconnessione hardware nel kernel Linux..."
+        local off_confirmed=false
+        for i in {1..10}; do
+            if [ ! -b "$final_dev" ] && [ ! -d "/sys/block/${dev_name}" ]; then
+                off_confirmed=true
+                echo "  [✓] Disconnessione confermata dal kernel! Il disco è inerte."
+                break
             fi
+            sleep 1
+        done
+
+        if [ "$off_confirmed" = false ]; then
+            echo "  [!] Attesa di sicurezza aggiuntiva prima del cutoff 220V..."
+            sleep "$SPINDOWN_WAIT_SEC"
         fi
     else
         echo "  [*] Nessun disco esterno LVM rilevato da disconnettere via SCSI."

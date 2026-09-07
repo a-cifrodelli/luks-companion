@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="it">
 <head>
   <meta charset="UTF-8">
@@ -182,7 +182,7 @@
       { id: 'bkp_chk', label: 'Secondo Volume\nLV_BACKUP definito?', color: '#4f46e5', font: { color: '#fff' }, shape: 'diamond', size: 30 },
       { id: 'mount_bkp', label: 'mount\n/dev/mybook/backup_data\n-> /srv/storage/backup_data', color: '#065f46', font: { color: '#6ee7b7' }, shape: 'box' },
       { id: 'webdav_chk', label: 'ENABLE_WEBDAV\n== true?', color: '#4f46e5', font: { color: '#fff' }, shape: 'diamond', size: 30 },
-      { id: 'webdav_start', label: 'Aggiorna config.yaml\nsystemctl restart webdav', color: '#1e293b', font: { color: '#e2e8f0' }, shape: 'box' },
+      { id: 'webdav_start', label: 'systemctl restart webdav\n(Aggiorna radice in /etc/webdav/config.yaml [file di sistema])', color: '#1e293b', font: { color: '#e2e8f0' }, shape: 'box' },
       { id: 'notify_unlock', label: 'Notifica Discord unlock\nStampa df -h storage', color: '#1e293b', font: { color: '#e2e8f0' }, shape: 'box' },
 
       // FASE 6: RUNTIME MODES
@@ -203,8 +203,6 @@
       { id: 't_umount', label: '3. fuser -km -9 sui mountpoint\numount filesystem\n(fallback: umount -l)', color: '#7c2d12', font: { color: '#fdba74' }, shape: 'box' },
       { id: 't_close_luks', label: '4. cryptsetup close cryptovault\n(Distruzione Master Key in RAM)', color: '#7c2d12', font: { color: '#fdba74' }, shape: 'box' },
       { id: 't_close_lvm', label: '5. vgchange -an mybook\n(Disattivazione Volume Group)', color: '#7c2d12', font: { color: '#fdba74' }, shape: 'box' },
-      { id: 't_sys_guard', label: 'target_dev è il disco\ndi sistema OS?', color: '#4f46e5', font: { color: '#fff' }, shape: 'diamond', size: 30 },
-      { id: 't_abort_scsi', label: '⛔ Protezione:\nAnnulla comandi SCSI per OS', color: '#991b1b', font: { color: '#fca5a5' }, shape: 'box' },
       { id: 't_scsi', label: '6. udisksctl power-off -b dev\n(SCSI STOP UNIT: Parcheggio Testine)', color: '#7c2d12', font: { color: '#fdba74' }, shape: 'box' },
       { id: 't_scsi_wait', label: 'Attesa rimozione da /sys/block/\n(max 10s o sleep SPINDOWN 3s)', color: '#7c2d12', font: { color: '#fdba74' }, shape: 'box' },
       { id: 't_ha_cut_chk', label: 'Home Assistant ON\n& Presa da spegnere?', color: '#4f46e5', font: { color: '#fff' }, shape: 'diamond', size: 30 },
@@ -284,10 +282,7 @@
       { from: 't_sync', to: 't_umount' },
       { from: 't_umount', to: 't_close_luks' },
       { from: 't_close_luks', to: 't_close_lvm' },
-      { from: 't_close_lvm', to: 't_sys_guard' },
-      { from: 't_sys_guard', to: 't_abort_scsi', label: 'Disco OS' },
-      { from: 't_sys_guard', to: 't_scsi', label: 'Storage' },
-      { from: 't_abort_scsi', to: 't_ha_cut_chk' },
+      { from: 't_close_lvm', to: 't_scsi' },
       { from: 't_scsi', to: 't_scsi_wait' },
       { from: 't_scsi_wait', to: 't_ha_cut_chk' },
       { from: 't_ha_cut_chk', to: 't_grace', label: 'Sì (Presa ON)' },
