@@ -11,6 +11,9 @@ Wants=luks-managerd.service
 Type=simple
 User=${SERVICE_USER}
 WorkingDirectory=${REPO_DIR}
+Environment="WEB_PORT=${WEB_PORT}"
+Environment="WEB_HOST=${WEB_HOST}"
+Environment="SOCKET_PATH=${SOCKET_PATH}"
 ExecStart=/usr/bin/python3 ${REPO_DIR}/web/server.py
 Restart=always
 RestartSec=3

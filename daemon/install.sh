@@ -37,6 +37,12 @@ if ! getent group luks-web >/dev/null 2>&1; then
     groupadd -r luks-web || true
 fi
 
+# Ensure .env is strictly root:root 600
+if [ -f "${REPO_DIR}/.env" ]; then
+    chown root:root "${REPO_DIR}/.env" 2>/dev/null || true
+    chmod 600 "${REPO_DIR}/.env" 2>/dev/null || true
+fi
+
 # Set executable permissions
 chmod +x "${SCRIPT_DIR}/luks-managerd.py"
 chmod +x "${REPO_DIR}/luks-manager.sh"

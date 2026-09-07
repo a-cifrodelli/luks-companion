@@ -52,13 +52,31 @@ else
     SERVICE_USER="root"
 fi
 
+# Ensure .env is strictly root:root 600
+if [ -f "$ENV_FILE" ]; then
+    chown root:root "$ENV_FILE" 2>/dev/null || true
+    chmod 600 "$ENV_FILE" 2>/dev/null || true
+fi
+
+# Extract unprivileged gateway variables from .env to inject into systemd service
+WEB_PORT="9099"
+WEB_HOST="0.0.0.0"
+SOCKET_PATH="/run/luks-manager.sock"
+if [ -f "$ENV_FILE" ]; then
+    V_PORT=$(grep -E "^WEB_PORT=" "$ENV_FILE" | cut -d'=' -f2 | tr -d '"' | tr -d "'" || echo "")
+    [ -n "$V_PORT" ] && WEB_PORT="$V_PORT"
+    V_HOST=$(grep -E "^WEB_HOST=" "$ENV_FILE" | cut -d'=' -f2 | tr -d '"' | tr -d "'" || echo "")
+    [ -n "$V_HOST" ] && WEB_HOST="$V_HOST"
+    V_SOCK=$(grep -E "^SOCKET_PATH=" "$ENV_FILE" | cut -d'=' -f2 | tr -d '"' | tr -d "'" || echo "")
+    [ -n "$V_SOCK" ] && SOCKET_PATH="$V_SOCK"
+fi
+
 # Set executable permissions
 chmod +x "${SCRIPT_DIR}/server.py"
 
 echo -e "\n${CLR_CYAN}[1/3] Generazione ${CLR_WHITE}${TARGET_SERVICE_FILE}${CLR_CYAN}...${CLR_RESET}"
-export REPO_DIR
-export SERVICE_USER
-envsubst '$REPO_DIR $SERVICE_USER' < "$SERVICE_TEMPLATE_FILE" > "$TARGET_SERVICE_FILE"
+export REPO_DIR SERVICE_USER WEB_PORT WEB_HOST SOCKET_PATH
+envsubst '$REPO_DIR $SERVICE_USER $WEB_PORT $WEB_HOST $SOCKET_PATH' < "$SERVICE_TEMPLATE_FILE" > "$TARGET_SERVICE_FILE"
 
 chmod 644 "$TARGET_SERVICE_FILE"
 echo -e "  ${CLR_GREEN}[✓] File di servizio systemd generato con successo.${CLR_RESET}"

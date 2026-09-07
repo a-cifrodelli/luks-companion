@@ -80,12 +80,22 @@ class Config:
 
         raw_env: Dict[str, str] = {}
         if os.path.exists(env_path):
-            with open(env_path, "r", encoding="utf-8", errors="replace") as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        key, val = line.split("=", 1)
-                        raw_env[key.strip()] = val.strip().strip('"').strip("'")
+            try:
+                with open(env_path, "r", encoding="utf-8", errors="replace") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            key, val = line.split("=", 1)
+                            raw_env[key.strip()] = val.strip().strip('"').strip("'")
+            except PermissionError:
+                # Running as unprivileged process without read access to root 600 .env:
+                # Gracefully fall back to defaults and process environment variables
+                pass
+
+        # Supplement with process environment variables
+        for k, v in os.environ.items():
+            if k not in raw_env:
+                raw_env[k] = v
 
         return cls.from_dict(raw_env, env_path=env_path, base_dir=base_dir)
 
