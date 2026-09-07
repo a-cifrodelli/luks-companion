@@ -255,7 +255,7 @@ class SocketDaemon:
                 pass
 
         os.makedirs(os.path.dirname(sock_path), exist_ok=True)
-        self.server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.server_sock = socket.socket(getattr(socket, "AF_UNIX", 1), socket.SOCK_STREAM)
         self.server_sock.bind(sock_path)
 
         # Apply strict permissions: 0660 (root:luks-web)

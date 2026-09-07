@@ -384,35 +384,51 @@ async function processNdjsonStream(res, onLine, onData) {
     let buffer = "";
     let finalResult = null;
 
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop();
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop();
 
-        for (const raw of lines) {
-            const line = raw.trim();
-            if (!line) continue;
+            for (const raw of lines) {
+                let line = raw.trim();
+                if (!line) continue;
+                if (line.startsWith("data:")) {
+                    line = line.slice(5).trim();
+                }
+                if (!line) continue;
+                try {
+                    const eventObj = JSON.parse(line);
+                    if (eventObj.event === "log" && eventObj.line) {
+                        if (onLine) onLine(eventObj.line);
+                        if (eventObj.data && onData) onData(eventObj.data);
+                    } else if (eventObj.event === "done") {
+                        finalResult = eventObj;
+                        if (eventObj.data && onData) onData(eventObj.data);
+                        // Terminal event reached: cancel reader early to unblock UI immediately
+                        try { await reader.cancel(); } catch (_) {}
+                        return finalResult;
+                    }
+                } catch (e) {
+                    if (onLine) onLine(line);
+                }
+            }
+        }
+        if (buffer.trim()) {
+            let line = buffer.trim();
+            if (line.startsWith("data:")) line = line.slice(5).trim();
             try {
                 const eventObj = JSON.parse(line);
-                if (eventObj.event === "log" && eventObj.line) {
-                    if (onLine) onLine(eventObj.line);
-                    if (eventObj.data && onData) onData(eventObj.data);
-                } else if (eventObj.event === "done") {
+                if (eventObj.event === "done") {
                     finalResult = eventObj;
                     if (eventObj.data && onData) onData(eventObj.data);
                 }
-            } catch (e) {
-                if (onLine) onLine(line);
-            }
+            } catch (e) {}
         }
-    }
-    if (buffer.trim()) {
-        try {
-            const eventObj = JSON.parse(buffer.trim());
-            if (eventObj.event === "done") finalResult = eventObj;
-        } catch (e) {}
+    } finally {
+        try { reader.releaseLock(); } catch (_) {}
     }
     return finalResult;
 }
@@ -678,7 +694,9 @@ async function performUnlock() {
         showToast("Errore", err.message, "error");
         UIState.setPhase("⚠️ ERRORE CONNESSIONE", "badge-red", false);
     } finally {
+        unlockBtn.disabled = false;
         unlockBtn.textContent = "🔑 Sblocca Storage";
+        UIState.isOperating = false;
         updateStatus();
     }
 }
@@ -983,7 +1001,9 @@ async function confirmStop() {
         showToast("Errore di Rete", err.message, "error");
         UIState.setPhase("⚠️ ERRORE RETE", "badge-red", false);
     } finally {
+        stopBtn.disabled = false;
         stopBtn.textContent = "🛑 Espelli & Spegni 220V";
+        UIState.isOperating = false;
         updateStatus();
     }
 }

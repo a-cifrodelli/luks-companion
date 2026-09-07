@@ -7,6 +7,7 @@ import sys
 import json
 import socket
 import mimetypes
+import base64
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 from typing import Optional, Dict, Any
@@ -23,7 +24,7 @@ def send_socket_command(sock_path: str, payload: dict, timeout: int = 45) -> dic
         }
 
     try:
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        with socket.socket(getattr(socket, "AF_UNIX", 1), socket.SOCK_STREAM) as sock:
             sock.settimeout(timeout)
             sock.connect(sock_path)
             sock.sendall((json.dumps(payload) + "\n").encode("utf-8"))
@@ -85,7 +86,25 @@ class WebGatewayHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/header/backup":
             res = send_socket_command(self.config.socket_path, {"action": "header_backup"}, timeout=30)
-            self.send_json(res)
+            if res.get("status") == "ok" and res.get("header_base64"):
+                try:
+                    header_bytes = base64.b64decode(res["header_base64"])
+                    filename = res.get("filename", "luks_header_backup.header")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/octet-stream")
+                    self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+                    self.send_header("Content-Length", str(len(header_bytes)))
+                    self.send_header("X-Content-Type-Options", "nosniff")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(header_bytes)
+                    return
+                except Exception as e:
+                    self.send_json({"status": "error", "message": f"Errore codifica download: {e}"}, 500)
+                    return
+            else:
+                self.send_json({"status": "error", "message": res.get("message", "Errore durante il backup dell'header")}, 400)
+                return
 
         elif path == "/api/events":
             self.send_response(200)
@@ -124,7 +143,7 @@ class WebGatewayHandler(BaseHTTPRequestHandler):
                 "action": "unlock",
                 "passphrase": req_data.get("passphrase"),
                 "keyfile_base64": req_data.get("keyfile_base64"),
-            }, timeout=60)
+            }, timeout=75)
 
         elif path == "/api/stop":
             self.handle_streamed_socket_action({"action": "stop"}, timeout=45)
@@ -139,7 +158,7 @@ class WebGatewayHandler(BaseHTTPRequestHandler):
         else:
             self.send_json({"status": "error", "message": "Endpoint non trovato"}, 404)
 
-    def handle_streamed_socket_action(self, payload: dict, timeout: int = 45):
+    def handle_streamed_socket_action(self, payload: dict, timeout: int = 75):
         sock_path = self.config.socket_path
         if not os.path.exists(sock_path):
             self.send_json({
@@ -149,32 +168,37 @@ class WebGatewayHandler(BaseHTTPRequestHandler):
             return
 
         self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
+        self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache, no-transform")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Connection", "close")
         self.end_headers()
 
         try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            with socket.socket(getattr(socket, "AF_UNIX", 1), socket.SOCK_STREAM) as sock:
                 sock.settimeout(timeout)
                 sock.connect(sock_path)
                 sock.sendall((json.dumps(payload) + "\n").encode("utf-8"))
 
                 with sock.makefile("r", encoding="utf-8", errors="replace") as f:
                     for line in f:
-                        line = line.strip()
-                        if line:
-                            msg = f"data: {line}\n\n"
-                            self.wfile.write(msg.encode("utf-8"))
+                        if not line:
+                            break
+                        try:
+                            self.wfile.write(line.encode("utf-8"))
                             self.wfile.flush()
+                        except (BrokenPipeError, ConnectionResetError):
+                            break
         except Exception as e:
-            err_obj = json.dumps({"event": "done", "status": "error", "message": str(e)})
+            err_line = json.dumps({"event": "done", "status": "error", "message": f"Errore streaming IPC: {str(e)}"}) + "\n"
             try:
-                self.wfile.write(f"data: {err_obj}\n\n".encode("utf-8"))
+                self.wfile.write(err_line.encode("utf-8"))
                 self.wfile.flush()
             except Exception:
                 pass
+        finally:
+            self.close_connection = True
 
     def serve_static(self, path: str):
         if path == "/" or not path:
