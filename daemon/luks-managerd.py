@@ -116,8 +116,38 @@ def find_smartctl_bin():
             return cand
     return None
 
+def is_system_disk(dev_path):
+    if not dev_path or not os.path.exists(dev_path):
+        return False
+    try:
+        real_target = os.path.realpath(dev_path)
+        target_name = os.path.basename(real_target)
+        out = subprocess.check_output(
+            ["findmnt", "-n", "-o", "SOURCE", "/", "/boot", "/boot/firmware"],
+            stderr=subprocess.DEVNULL, text=True, timeout=2
+        ).strip()
+        for src in out.splitlines():
+            src = src.strip()
+            if not src:
+                continue
+            src_real = os.path.realpath(src)
+            if real_target == src_real:
+                return True
+            try:
+                parent = subprocess.check_output(
+                    ["lsblk", "-no", "PKNAME", src_real],
+                    stderr=subprocess.DEVNULL, text=True, timeout=1
+                ).strip()
+                if parent and (f"/dev/{parent}" == real_target or target_name == parent):
+                    return True
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return False
+
 def find_target_block_device(vg_name, mapper_name, mount_crypto, target_dev_cfg):
-    if target_dev_cfg and os.path.exists(target_dev_cfg):
+    if target_dev_cfg and os.path.exists(target_dev_cfg) and not is_system_disk(target_dev_cfg):
         return target_dev_cfg
 
     # Priority 1: Trace back from mapper, mountpoint, or VG device node using lsblk -s
@@ -138,45 +168,37 @@ def find_target_block_device(vg_name, mapper_name, mount_crypto, target_dev_cfg)
             for line in out.splitlines():
                 parts = line.strip().split()
                 if len(parts) >= 2 and parts[1].lower() == "disk" and os.path.exists(parts[0]):
-                    return parts[0]
+                    if not is_system_disk(parts[0]):
+                        return parts[0]
         except Exception:
             pass
 
-    # Priority 2: Query LVM physical volumes directly
+    # Priority 2: Query LVM physical volumes directly (matching VG name if provided)
     try:
-        out = subprocess.check_output(
-            ["pvs", "--noheadings", "-o", "pv_name"],
-            stderr=subprocess.DEVNULL, text=True, timeout=2
-        ).strip()
-        for pv in out.splitlines():
-            pv = pv.strip()
-            if pv and os.path.exists(pv):
+        cmd = ["pvs", "--noheadings", "-o", "pv_name,vg_name"]
+        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True, timeout=2).strip()
+        for line in out.splitlines():
+            parts = line.strip().split()
+            if not parts:
+                continue
+            pv = parts[0]
+            pv_vg = parts[1] if len(parts) > 1 else ""
+            if vg_name and pv_vg and pv_vg != vg_name:
+                continue
+            if pv and os.path.exists(pv) and not is_system_disk(pv):
                 try:
                     pout = subprocess.check_output(
                         ["lsblk", "-s", "-rno", "PATH,TYPE", pv],
                         stderr=subprocess.DEVNULL, text=True, timeout=2
                     ).strip()
-                    for line in pout.splitlines():
-                        parts = line.strip().split()
-                        if len(parts) >= 2 and parts[1].lower() == "disk" and os.path.exists(parts[0]):
-                            return parts[0]
+                    for pline in pout.splitlines():
+                        pparts = pline.strip().split()
+                        if len(pparts) >= 2 and pparts[1].lower() == "disk" and os.path.exists(pparts[0]):
+                            if not is_system_disk(pparts[0]):
+                                return pparts[0]
                 except Exception:
                     pass
                 return pv
-    except Exception:
-        pass
-
-    # Priority 3: Scan for external USB block devices that are not system disks
-    try:
-        out = subprocess.check_output(
-            ["lsblk", "-d", "-rno", "PATH,TRAN,TYPE"],
-            stderr=subprocess.DEVNULL, text=True, timeout=2
-        ).strip()
-        for line in out.splitlines():
-            parts = line.strip().split()
-            if len(parts) >= 3 and parts[1].lower() == "usb" and parts[2].lower() == "disk":
-                if os.path.exists(parts[0]):
-                    return parts[0]
     except Exception:
         pass
 
@@ -186,7 +208,7 @@ def get_smart_data(target_dev):
     smartctl = find_smartctl_bin()
     if not smartctl:
         return {"supported": False, "installed": False, "reason": "smartctl non installato (sudo pacman -S smartmontools)"}
-    if not target_dev or not os.path.exists(target_dev):
+    if not target_dev or not os.path.exists(target_dev) or is_system_disk(target_dev):
         return {"supported": False, "installed": True, "device": None, "reason": "Disco spento / inerte (0W Standby)"}
 
     # Try standard probe first, then SAT (SCSI to ATA Translation) fallback
@@ -249,9 +271,9 @@ def get_status():
     mount_crypto = os.path.join(storage_base, mapper_name) if mapper_name else ""
     mount_backup = os.path.join(storage_base, lv_backup) if lv_backup else ""
 
-    # Check physical block device presence on USB/SCSI bus
+    # Check physical block device presence on USB/SCSI bus (strictly ignoring OS system disk)
     target_dev = find_target_block_device(vg_name, mapper_name, mount_crypto, target_dev_cfg)
-    disk_present = target_dev is not None and os.path.exists(target_dev)
+    disk_present = target_dev is not None and os.path.exists(target_dev) and not is_system_disk(target_dev)
 
     is_mounted = os.path.ismount(mount_crypto) if mount_crypto else False
     is_unlocked = (os.path.exists(f"/dev/mapper/{mapper_name}") and disk_present) if mapper_name else False
@@ -267,14 +289,17 @@ def get_status():
 
     # Check Home Assistant smart plug status
     ha_state = get_ha_plug_state(env)
-    plug_powered = (ha_state == "on" or ha_state == "always-on") or disk_present
+    if env.get("ENABLE_HOME_ASSISTANT") == "true":
+        plug_powered = (ha_state == "on")
+    else:
+        plug_powered = disk_present
 
     # Multi-state detection
     if is_mounted:
         master_status = "mounted"
     elif is_unlocked:
         master_status = "unlocked"
-    elif plug_powered or vg_active or disk_present:
+    elif plug_powered:
         master_status = "standby"
     else:
         master_status = "stopped"
