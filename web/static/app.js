@@ -123,44 +123,82 @@ const UIState = {
     }
 };
 
+let lastStateSignature = null;
+
 function applyStatusData(data) {
     if (!data) return;
+
+    // Track external CLI state changes and log them to console
+    const currentSignature = `${data.vg_active}_${data.unlocked}_${data.mounted}_${data.webdav_active}_${data.plug_powered}_${data.disk_present}`;
+    if (lastStateSignature !== null && lastStateSignature !== currentSignature && !UIState.isOperating) {
+        const lvmDesc = data.vg_active ? 'Attivo' : (data.disk_present ? 'Inerte' : 'Disattivo');
+        const luksDesc = data.unlocked ? 'Sbloccato' : 'Sigillato';
+        const mountDesc = data.mounted ? 'Montato' : 'Smontato';
+        const webdavDesc = data.webdav_active ? 'Attivo' : 'Inattivo';
+        logConsole(`[MONITOR] Aggiornamento stato: LVM: ${lvmDesc} | LUKS: ${luksDesc} | Mount: ${mountDesc} | WebDAV: ${webdavDesc}`);
+    }
+    lastStateSignature = currentSignature;
 
     // Only update master status badge and card values if NOT currently in an active animated operation!
     if (!UIState.isOperating) {
         const masterBadge = document.getElementById("masterStatusBadge");
         const masterText = document.getElementById("masterStatusText");
-        if (data.status === "mounted") {
-            if (masterBadge) masterBadge.className = "badge badge-green";
-            if (masterText) masterText.textContent = "MONTATO & OPERATIVO";
+        const webdavPortStr = data.webdav_port ? ` (Porta ${data.webdav_port})` : "";
+
+        // 1. INDEPENDENT COMPONENT CARDS (Granular MVP representation)
+        // LVM Card
+        if (data.vg_active) {
             UIState.setCard("Lvm", "success", `Attivo (${data.vg_name || 'LVM'})`, "Volume Group Pronto");
-            UIState.setCard("Luks", "success", `Sbloccato (/dev/mapper/${data.mapper_name || '...'})`, "Chiave in RAM (dm-crypt)");
-            UIState.setCard("Mount", "success", data.mount_crypto || "Montato", "Local Filesystem ext4");
-            const webdavPortStr = data.webdav_port ? ` (Porta ${data.webdav_port})` : "";
-            UIState.setCard("Webdav", data.webdav_active ? "success" : "idle", data.webdav_active ? `Attivo${webdavPortStr}` : "Inattivo", "Mount Diretto Filesystem");
-        } else if (data.status === "unlocked") {
-            if (masterBadge) masterBadge.className = "badge badge-amber";
-            if (masterText) masterText.textContent = "SBLOCCATO (SMONTATO)";
-            UIState.setCard("Lvm", "success", `Attivo (${data.vg_name || 'LVM'})`, "Volume Group Pronto");
-            UIState.setCard("Luks", "success", `Sbloccato (/dev/mapper/${data.mapper_name || '...'})`, "Chiave in RAM (dm-crypt)");
-            UIState.setCard("Mount", "idle", "Non montato", "Local Filesystem");
-            UIState.setCard("Webdav", "idle", "Inattivo", "Mount Diretto Filesystem");
-        } else if (data.status === "standby") {
-            if (masterBadge) masterBadge.className = "badge badge-blue";
-            if (masterText) masterText.textContent = "STANDBY (ALIMENTATO)";
-            const lvmVal = data.vg_active ? `Attivo (${data.vg_name || 'LVM'})` : (data.disk_present ? "Inerte (Disco Rilevato)" : "Inerte (Pronto)");
-            const lvmMeta = data.vg_active ? "Volume Group Pronto" : "Pronto all'attivazione";
-            UIState.setCard("Lvm", data.vg_active ? "success" : "idle", lvmVal, lvmMeta);
-            UIState.setCard("Luks", "idle", "Sigillato (0 byte in RAM)", "Pronto per lo sblocco");
-            UIState.setCard("Mount", "idle", "Non montato", "Local Filesystem");
-            UIState.setCard("Webdav", "idle", "Inattivo", "Mount Diretto Filesystem");
+        } else if (data.disk_present) {
+            UIState.setCard("Lvm", "idle", "Inerte (Disco Rilevato)", "Pronto all'attivazione");
         } else {
-            if (masterBadge) masterBadge.className = "badge badge-red";
-            if (masterText) masterText.textContent = "SPENTO / 0W STANDBY";
             UIState.setCard("Lvm", "idle", "Disattivato", "Kernel Module dm-mod");
+        }
+
+        // LUKS Card
+        if (data.unlocked) {
+            UIState.setCard("Luks", "success", `Sbloccato (/dev/mapper/${data.mapper_name || '...'})`, "Chiave in RAM (dm-crypt)");
+        } else if (data.vg_active || data.disk_present) {
+            UIState.setCard("Luks", "idle", "Sigillato (0 byte in RAM)", "Pronto per lo sblocco");
+        } else {
             UIState.setCard("Luks", "idle", "Sigillato (0 byte in RAM)", "RAM Key Management");
+        }
+
+        // Mount Card
+        if (data.mounted) {
+            UIState.setCard("Mount", "success", data.mount_crypto || "Montato", "Local Filesystem ext4");
+        } else {
             UIState.setCard("Mount", "idle", "Non montato", "Local Filesystem");
-            UIState.setCard("Webdav", "idle", "Inattivo", "Mount Diretto Filesystem");
+        }
+
+        // WebDAV Card
+        if (data.webdav_active) {
+            UIState.setCard("Webdav", "success", `Attivo${webdavPortStr}`, "Mount Diretto Filesystem");
+        } else {
+            UIState.setCard("Webdav", "idle", "Inattivo", "Servizio WebDAV");
+        }
+
+        // 2. COMPOSITE MASTER STATUS BADGE
+        if (masterBadge && masterText) {
+            if (data.mounted && data.webdav_active) {
+                masterBadge.className = "badge badge-green";
+                masterText.textContent = "MONTATO & OPERATIVO";
+            } else if (data.mounted) {
+                masterBadge.className = "badge badge-green";
+                masterText.textContent = "MONTATO (WEBDAV FERMO)";
+            } else if (data.unlocked) {
+                masterBadge.className = "badge badge-amber";
+                masterText.textContent = "SBLOCCATO (SMONTATO)";
+            } else if (data.vg_active) {
+                masterBadge.className = "badge badge-blue";
+                masterText.textContent = "LVM ATTIVO (LUKS CHIUSO)";
+            } else if (data.plug_powered || data.disk_present) {
+                masterBadge.className = "badge badge-blue";
+                masterText.textContent = "STANDBY (ALIMENTATO)";
+            } else {
+                masterBadge.className = "badge badge-red";
+                masterText.textContent = "SPENTO / 0W STANDBY";
+            }
         }
     }
 
