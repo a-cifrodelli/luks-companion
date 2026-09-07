@@ -107,14 +107,17 @@ echo -e "  ${CLR_GREEN}[✓] Binario installato con successo in /usr/local/bin/w
 
 # 3. PROMPT FOR WEBDAV CREDENTIALS
 echo -e "\n${CLR_CYAN}[3/5] Configurazione credenziali WebDAV (Porta ${CLR_WHITE}${WEBDAV_PORT}${CLR_CYAN})...${CLR_RESET}"
-read -p "Inserisci nome utente WebDAV [admin]: " WEBDAV_USER
-WEBDAV_USER="${WEBDAV_USER:-admin}"
+DEFAULT_USER="${WEBDAV_USER:-admin}"
 
-read -rs -p "Inserisci password per utente '$WEBDAV_USER': " WEBDAV_PASS
-echo ""
+if [ -z "${WEBDAV_PASSWORD_HASH:-}" ]; then
+    read -p "Inserisci nome utente WebDAV [${DEFAULT_USER}]: " INPUT_USER
+    WEBDAV_USER="${INPUT_USER:-$DEFAULT_USER}"
 
-# Generate Bcrypt hash using webdav native tool or python fallback
-RAW_HASH=$(/usr/local/bin/webdav bcrypt "$WEBDAV_PASS" 2>/dev/null || python3 -c "
+    read -rs -p "Inserisci password per utente '$WEBDAV_USER': " WEBDAV_PASS
+    echo ""
+
+    # Generate Bcrypt hash using webdav native tool or python fallback
+    RAW_HASH=$(/usr/local/bin/webdav bcrypt "$WEBDAV_PASS" 2>/dev/null || python3 -c "
 import sys
 try:
     import bcrypt
@@ -123,12 +126,16 @@ except Exception:
     pass
 " "$WEBDAV_PASS" 2>/dev/null || echo "$WEBDAV_PASS")
 
-if [[ "$RAW_HASH" == \{bcrypt\}* ]]; then
-    WEBDAV_PASSWORD_HASH="${RAW_HASH}"
-elif [[ "$RAW_HASH" == \$2* ]]; then
-    WEBDAV_PASSWORD_HASH="{bcrypt}${RAW_HASH}"
+    if [[ "$RAW_HASH" == \{bcrypt\}* ]]; then
+        WEBDAV_PASSWORD_HASH="${RAW_HASH}"
+    elif [[ "$RAW_HASH" == \$2* ]]; then
+        WEBDAV_PASSWORD_HASH="{bcrypt}${RAW_HASH}"
+    else
+        WEBDAV_PASSWORD_HASH="{bcrypt}${RAW_HASH}"
+    fi
 else
-    WEBDAV_PASSWORD_HASH="{bcrypt}${RAW_HASH}"
+    WEBDAV_USER="${WEBDAV_USER:-admin}"
+    echo -e "  ${CLR_GREEN}[✓] Utilizzo utente '$WEBDAV_USER' e password hash già presenti nel file .env${CLR_RESET}"
 fi
 
 # 4. POPULATE CONFIG FILE FROM TEMPLATE

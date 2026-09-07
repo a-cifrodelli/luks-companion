@@ -35,6 +35,8 @@ class Config:
     # WebDAV and Web UI
     enable_webdav: bool = True
     webdav_port: int = 8081
+    webdav_user: str = "admin"
+    webdav_password_hash: str = ""
     web_host: str = "0.0.0.0"
     web_port: int = 9099
 
@@ -120,6 +122,8 @@ class Config:
             idle_timeout_min=to_int(data.get("IDLE_TIMEOUT_MIN"), 30),
             enable_webdav=to_bool(data.get("ENABLE_WEBDAV"), True),
             webdav_port=to_int(data.get("WEBDAV_PORT"), 8081),
+            webdav_user=data.get("WEBDAV_USER", "admin").strip(),
+            webdav_password_hash=data.get("WEBDAV_PASSWORD_HASH", "").strip(),
             web_host=data.get("WEB_HOST", "0.0.0.0").strip(),
             web_port=to_int(data.get("WEB_PORT"), 9099),
             discord_webhook_url=data.get("DISCORD_WEBHOOK_URL", "").strip(),
