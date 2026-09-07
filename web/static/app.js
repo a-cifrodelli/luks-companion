@@ -310,8 +310,21 @@ async function updateStatus() {
         const res = await fetch("/api/status");
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
-        if (json.status === "ok" && json.data) {
-            const data = json.data;
+
+        // Check if daemon reported an error (e.g. socket missing or daemon stopped)
+        if (json && json.status === "error") {
+            if (!UIState.isOperating) {
+                const masterBadge = document.getElementById("masterStatusBadge");
+                const masterText = document.getElementById("masterStatusText");
+                if (masterBadge) masterBadge.className = "badge badge-red";
+                if (masterText) masterText.textContent = "DISCONNESSO DAL DEMONE";
+            }
+            return;
+        }
+
+        // Support both wrapped ({status: "ok", data: {...}}) and unwrapped ({status: "stopped", ...})
+        const data = (json && json.data) ? json.data : json;
+        if (data && typeof data === "object" && ("status" in data || "mounted" in data)) {
             applyStatusData(data);
 
             const unlockBtn = document.getElementById("btnUnlock");

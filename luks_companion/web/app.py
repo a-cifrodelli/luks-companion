@@ -78,11 +78,11 @@ class WebGatewayHandler(BaseHTTPRequestHandler):
 
         if path == "/api/status":
             res = send_socket_command(self.config.socket_path, {"action": "status"})
-            self.send_json(res.get("data", res))
+            self.send_json(res)
 
         elif path == "/api/diagnose":
             res = send_socket_command(self.config.socket_path, {"action": "diagnose"})
-            self.send_json(res.get("data", res))
+            self.send_json(res)
 
         elif path == "/api/header/backup":
             res = send_socket_command(self.config.socket_path, {"action": "header_backup"}, timeout=30)
