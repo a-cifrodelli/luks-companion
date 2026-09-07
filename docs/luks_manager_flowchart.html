@@ -1,0 +1,335 @@
+﻿<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LUKS Companion - Flowchart Completo Architettura & Ciclo di Vita</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: #0b0f19;
+      color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: #111827;
+      border-bottom: 1px solid #1f2937;
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 100;
+    }
+    .header-title {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .header-title h1 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #38bdf8;
+      letter-spacing: -0.01em;
+    }
+    .header-title span {
+      font-size: 0.8rem;
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 0.2rem 0.6rem;
+      border-radius: 9999px;
+      font-weight: 600;
+    }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    button {
+      background: #1e293b;
+      color: #f1f5f9;
+      border: 1px solid #334155;
+      padding: 0.45rem 0.85rem;
+      border-radius: 0.375rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      transition: all 0.15s ease;
+    }
+    button:hover {
+      background: #334155;
+      border-color: #38bdf8;
+      color: #38bdf8;
+    }
+    #container {
+      flex: 1;
+      width: 100%;
+      height: calc(100vh - 60px);
+      position: relative;
+      background: radial-gradient(circle at center, #1e293b 0%, #0b0f19 100%);
+      cursor: grab;
+    }
+    #container:active {
+      cursor: grabbing;
+    }
+    #mermaidOutput {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #mermaidOutput svg {
+      width: 100% !important;
+      height: 100% !important;
+      max-width: none !important;
+    }
+    .legend {
+      position: absolute;
+      bottom: 1.5rem;
+      left: 1.5rem;
+      background: rgba(17, 24, 39, 0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid #374151;
+      border-radius: 0.5rem;
+      padding: 0.75rem 1rem;
+      font-size: 0.78rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      z-index: 50;
+      pointer-events: none;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .legend-box {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+    .hint {
+      position: absolute;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      background: rgba(17, 24, 39, 0.85);
+      border: 1px solid #374151;
+      border-radius: 0.5rem;
+      padding: 0.5rem 0.85rem;
+      font-size: 0.78rem;
+      color: #94a3b8;
+      z-index: 50;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-title">
+      <h1>LUKS Manager - Architecture & Lifecycle Flowchart</h1>
+      <span>v2.0 LUKS2 Master</span>
+    </div>
+    <div class="controls">
+      <button onclick="panZoomInstance.zoomIn()">🔍 Zoom +</button>
+      <button onclick="panZoomInstance.zoomOut()">🔍 Zoom -</button>
+      <button onclick="panZoomInstance.resetZoom(); panZoomInstance.center();">🔄 Reset Vista</button>
+      <button onclick="panZoomInstance.fit(); panZoomInstance.center();">📐 Adatta allo Schermo</button>
+    </div>
+  </header>
+
+  <div id="container">
+    <div id="mermaidOutput">
+      <pre class="mermaid">
+flowchart TD
+    %% STILI GENERALI
+    classDef startNode fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#fff;
+    classDef actionNode fill:#1e293b,stroke:#475569,stroke-width:1px,color:#e2e8f0;
+    classDef decisionNode fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#fff;
+    classDef errorNode fill:#450a0a,stroke:#ef4444,stroke-width:2px,color:#fca5a5;
+    classDef successNode fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#6ee7b7;
+    classDef teardownNode fill:#431407,stroke:#f97316,stroke-width:2px,color:#fdba74;
+
+    START(["🚀 AVVIO luks-manager.sh"]) :::startNode --> ROOT{"UID == 0 (root)?"}:::decisionNode
+    ROOT -- "No" --> SUDO["exec sudo  $@"]:::actionNode --> FLOCK
+    ROOT -- "Sì" --> FLOCK{"flock -n /run/luks-manager.lock"}:::decisionNode
+    
+    FLOCK -- "Occupato (Altra istanza)" --> ERR_LOCK["❌ ERRORE: Lock occupato -> exit 1"]:::errorNode
+    FLOCK -- "Acquisito" --> STDIN_BUF["Bufferizza STDIN in RAM (/dev/shm) se presente"]:::actionNode
+    STDIN_BUF --> LOAD_ENV{".env esiste?"}:::decisionNode
+    
+    LOAD_ENV -- "No" --> ERR_ENV["❌ ERRORE: .env mancante -> exit 1"]:::errorNode
+    LOAD_ENV -- "Sì" --> PARSE_ARGS["Carica env & Parsing argomenti CLI"]:::actionNode
+    PARSE_ARGS --> CMD_DISPATCH{"Comando ()"}:::decisionNode
+
+    %% RAMO STATUS
+    CMD_DISPATCH -- "status" --> ST_QUERY["Interroga HA, LVM, LUKS, Mount, WebDAV"]:::actionNode
+    ST_QUERY --> ST_PRINT["Stampa tabella stato su stdout"]:::actionNode --> EXIT_0_ST(["exit 0"]):::successNode
+
+    %% RAMO STOP
+    CMD_DISPATCH -- "stop / lock" --> TEARDOWN_ENTRY
+
+    %% RAMO START
+    CMD_DISPATCH -- "start / unlock" --> TRAP_INIT["Arma Traps: SIGINT, SIGTERM, SIGHUP -> trap_cleanup"]:::actionNode
+    TRAP_INIT --> HA_CHECK{"ENABLE_HOME_ASSISTANT == true?"}:::decisionNode
+
+    %% FASE 1: POWER ON
+    HA_CHECK -- "false" --> DISK_WAIT
+    HA_CHECK -- "true" --> HA_ON["curl POST switch/turn_on (timeout 4s)"]:::actionNode
+    HA_ON --> HA_ON_RES{"Chiamata riuscita?"}:::decisionNode
+    HA_ON_RES -- "No" --> ERR_HA1["❌ Notifica Discord & Errore HA -> exit 1 (Presa non toccata)"]:::errorNode
+    HA_ON_RES -- "Sì" --> HA_POLL["Loop attesa stato 'on' (max HA_WAIT_TIMEOUT sec)"]:::actionNode
+    HA_POLL --> HA_POLL_RES{"Stato == 'on'?"}:::decisionNode
+    HA_POLL_RES -- "Timeout" --> ERR_HA2["❌ Timeout accensione presa"]:::errorNode --> TEARDOWN_ENTRY
+
+    %% FASE 2: RILEVAMENTO HARDWARE
+    HA_POLL_RES -- "Sì" --> DISK_WAIT["Loop attesa rilevamento LVM / SCSI (max USB_DETECT_TIMEOUT)"]:::actionNode
+    DISK_WAIT --> DISK_FOUND{"Disco rilevato?"}:::decisionNode
+    DISK_FOUND -- "Timeout" --> ERR_DISK["❌ Disco non apparso sul bus USB"]:::errorNode --> TEARDOWN_ENTRY
+
+    %% FASE 3: LVM ACTIVATION
+    DISK_FOUND -- "Sì" --> LVM_ACT["vgscan --mknodes && vgchange -ay VG_NAME"]:::actionNode
+    LVM_ACT --> LUKS_ALREADY{"/dev/mapper/cryptovault già aperto?"}:::decisionNode
+
+    %% FASE 4: LUKS UNLOCK
+    LUKS_ALREADY -- "Sì" --> MOUNT_PHASE
+    LUKS_ALREADY -- "No" --> KEY_SRC{"Origine Chiave"}:::decisionNode
+
+    KEY_SRC -- "--keyfile <path>" --> KF_EXISTS{"File esiste?"}:::decisionNode
+    KF_EXISTS -- "No" --> ERR_KF["❌ File chiave non trovato"]:::errorNode --> TEARDOWN_ENTRY
+    KF_EXISTS -- "Sì" --> KF_OPEN["cryptsetup open --key-file"]:::actionNode
+    KF_OPEN --> KF_RES{"Sblocco riuscito?"}:::decisionNode
+    KF_RES -- "No" --> ERR_KF_INV["❌ Chiave non valida"]:::errorNode --> TEARDOWN_ENTRY
+    KF_RES -- "Sì" --> MOUNT_PHASE
+
+    KEY_SRC -- "STDIN / WebUI Socket" --> STDIN_OPEN["cryptsetup open --key-file /dev/shm/..."]:::actionNode
+    STDIN_OPEN --> STDIN_CLEAN["cleanup_key (shred & wipe RAM buffer)"]:::actionNode
+    STDIN_CLEAN --> STDIN_RES{"Sblocco riuscito?"}:::decisionNode
+    STDIN_RES -- "No" --> ERR_STDIN["❌ Passphrase/Key da stdin errata"]:::errorNode --> TEARDOWN_ENTRY
+    STDIN_RES -- "Sì" --> MOUNT_PHASE
+
+    KEY_SRC -- "TTY Interattivo" --> TTY_LOOP["Loop Passphrase (max 3 tentativi)"]:::actionNode
+    TTY_LOOP --> TTY_RES{"Sblocco riuscito?"}:::decisionNode
+    TTY_RES -- "No" --> ERR_TTY["❌ Superati 3 tentativi errati"]:::errorNode --> TEARDOWN_ENTRY
+    TTY_RES -- "Sì" --> MOUNT_PHASE
+
+    %% FASE 5: MOUNT & SERVIZI
+    MOUNT_PHASE["mkdir -p /srv/storage && chgrp storage && chmod 2775"]:::actionNode
+    MOUNT_PHASE --> MOUNT_EXT4["mount /dev/mapper/cryptovault /srv/storage/crypto_data"]:::actionNode
+    MOUNT_EXT4 --> MOUNT_BKP{"LV_BACKUP configurato?"}:::decisionNode
+    MOUNT_BKP -- "Sì" --> MOUNT_BKP_EXEC["mount /dev/VG/backup_data /srv/storage/backup_data"]:::actionNode --> WEBDAV_CHECK
+    MOUNT_BKP -- "No" --> WEBDAV_CHECK{"ENABLE_WEBDAV == true?"}:::decisionNode
+
+    WEBDAV_CHECK -- "Sì" --> WEBDAV_START["Aggiorna config.yaml & systemctl restart webdav"]:::actionNode --> SAMBA_CHECK
+    WEBDAV_CHECK -- "No" --> SAMBA_CHECK{"RELOAD_SAMBA == true?"}:::decisionNode
+    SAMBA_CHECK -- "Sì" --> SAMBA_RELOAD["smbcontrol all reload-config"]:::actionNode --> NOTIFY_OK
+    SAMBA_CHECK -- "No" --> NOTIFY_OK["notify_discord unlock && df -h"]:::actionNode
+
+    %% FASE 6: MODALITÀ RUNTIME
+    NOTIFY_OK --> EXEC_MODE{"Esecuzione Interattiva o Demone/WebUI?"}:::decisionNode
+    
+    EXEC_MODE -- "Demone / WebUI / --no-watchdog" --> DISARM_TRAP["Disarma Trap SIGINT"]:::actionNode
+    DISARM_TRAP --> EXIT_0_DAEMON(["✓ SESSIONE ATTIVA & MONTATA (exit 0)"]):::successNode
+
+    EXEC_MODE -- "TTY Interattivo (CLI)" --> WATCHDOG_LOOP["Loop Monitor I/O ogni 15s (o tasto INVIO utente)"]:::actionNode
+    WATCHDOG_LOOP --> WD_EVENT{"Evento Rilevato"}:::decisionNode
+    WD_EVENT -- "Tasto INVIO premuto" --> TEARDOWN_ENTRY
+    WD_EVENT -- "Inattività I/O > IDLE_TIMEOUT_MIN" --> WD_NOTIFY["notify_discord watchdog"]:::actionNode --> TEARDOWN_ENTRY
+
+    %% =========================================================
+    %% SEQUENZA ATOMICA DI TEARDOWN (safe_power_off_sequence)
+    %% =========================================================
+    subgraph TEARDOWN_BLOCK ["🛡️ SEQUENZA DI TEARDOWN SICURO (safe_power_off_sequence)"]
+        TEARDOWN_ENTRY["Disabilita Traps: trap '' ERR SIGINT SIGTERM"]:::teardownNode --> T_GUARD{"TEARDOWN_DONE == true?"}:::decisionNode
+        T_GUARD -- "Sì (Già eseguito)" --> T_DONE(["return 0"]):::teardownNode
+        T_GUARD -- "No" --> T_SET["TEARDOWN_DONE = true"]:::teardownNode
+        
+        T_SET --> T_TGT["Salva target device (detect_target_device) PRIMA dello smontaggio"]:::teardownNode
+        T_TGT --> T_WD["1. Stop WebDAV (systemctl stop webdav)"]:::teardownNode
+        T_WD --> T_SYNC["2. Flush buffer kernel (sync)"]:::teardownNode
+        
+        T_SYNC --> T_MNT_CHK{"Filesystem montati?"}:::decisionNode
+        T_MNT_CHK -- "Sì" --> T_FUSER["fuser -km -9 sui mountpoint"]:::teardownNode
+        T_FUSER --> T_UMOUNT["umount (con fallback su umount -l)"]:::teardownNode --> T_LUKS_CHK
+        T_MNT_CHK -- "No" --> T_LUKS_CHK{"LUKS Mapper aperto?"}:::decisionNode
+        
+        T_LUKS_CHK -- "Sì" --> T_LUKS_CLOSE["cryptsetup close (retry 3x, fallback dmsetup -f)"]:::teardownNode --> T_LVM_CHK
+        T_LUKS_CHK -- "No" --> T_LVM_CHK["vgchange -an VG_NAME (retry 3x)"]:::teardownNode
+        
+        T_LVM_CHK --> T_SYS_GUARD{"Il target_dev è il disco di sistema OS?"}:::decisionNode
+        T_SYS_GUARD -- "Sì (Allarme)" --> T_ABORT_SCSI["⛔ Protezione: Ignora comandi SCSI spegnimento"]:::teardownNode --> T_HA_CUT
+        T_SYS_GUARD -- "No (Disco esterno)" --> T_SCSI["3. udisksctl power-off -b dev (SCSI STOP UNIT)"]:::teardownNode
+        T_SCSI --> T_SCSI_WAIT["Loop attesa rimozione da /sys/block/ (max 10s)"]:::teardownNode
+        T_SCSI_WAIT --> T_SCSI_FALLBACK{"Disconnesso da kernel?"}:::decisionNode
+        T_SCSI_FALLBACK -- "No" --> T_SPIN_SLEEP["sleep SPINDOWN_WAIT_SEC (3s)"]:::teardownNode --> T_HA_CUT
+        T_SCSI_FALLBACK -- "Sì" --> T_HA_CUT{"ENABLE_HOME_ASSISTANT && (POWER_IS_ON || state=='on')"}:::decisionNode
+        
+        T_HA_CUT -- "true" --> T_GRACE["4. Pausa di tolleranza pre-cutoff (CUTOFF_GRACE_SEC = 5s)"]:::teardownNode
+        T_GRACE --> T_HA_OFF["5. curl POST switch/turn_off (Home Assistant)"]:::teardownNode
+        T_HA_OFF --> T_END_OK["Wipe variabile PASSPHRASE in memoria"]:::teardownNode
+        T_HA_CUT -- "false" --> T_END_OK
+    end
+
+    T_END_OK --> FINAL_EXIT(["🔴 DISCO INERTE & 0W STANDBY (exit)"]):::startNode
+      </pre>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-box" style="background:#38bdf8;"></div><span>Punti di Inizio / Fine</span></div>
+    <div class="legend-item"><div class="legend-box" style="background:#818cf8;"></div><span>Decisioni & Condizioni (if/else)</span></div>
+    <div class="legend-item"><div class="legend-box" style="background:#475569;"></div><span>Azioni & Comandi Eseguiti</span></div>
+    <div class="legend-item"><div class="legend-box" style="background:#f97316;"></div><span>Sequenza Teardown & Spegnimento</span></div>
+    <div class="legend-item"><div class="legend-box" style="background:#ef4444;"></div><span>Rami di Errore / Abort</span></div>
+    <div class="legend-item"><div class="legend-box" style="background:#10b981;"></div><span>Stato Attivo Operativo</span></div>
+  </div>
+
+  <div class="hint">
+    💡 Trascina con il mouse per spostarti &bull; Usa la rotella per zoomare
+  </div>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'dark',
+      securityLevel: 'loose',
+      flowchart: {
+        useMaxWidth: false,
+        htmlLabels: true,
+        curve: 'basis'
+      }
+    });
+
+    let panZoomInstance = null;
+
+    document.addEventListener("DOMContentLoaded", () => {
+      setTimeout(() => {
+        const svgElement = document.querySelector("#mermaidOutput svg");
+        if (svgElement) {
+          panZoomInstance = svgPanZoom(svgElement, {
+            zoomEnabled: true,
+            controlIconsEnabled: false,
+            fit: true,
+            center: true,
+            minZoom: 0.2,
+            maxZoom: 10,
+            zoomScaleSensitivity: 0.3
+          });
+        }
+      }, 800);
+    });
+  </script>
+</body>
+</html>
