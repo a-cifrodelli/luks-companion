@@ -159,7 +159,7 @@ sudo apt update && sudo apt install -y cryptsetup lvm2 udisks2 psmisc curl socat
 
 3. **Make scripts executable**:
    ```bash
-   chmod +x luks-manager.sh test_ha_tapo.sh daemon/install.sh web/install.sh scripts/install-webdav.sh scripts/update-env.sh scripts/notify-discord.sh scripts/notify-discord.py
+   chmod +x luks-manager.sh daemon/install.sh web/install.sh scripts/install-webdav.sh scripts/update-env.sh scripts/notify-discord.sh scripts/notify-discord.py
    ```
 
 ---
