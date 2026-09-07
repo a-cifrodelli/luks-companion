@@ -13,6 +13,8 @@ import time
 import datetime
 import shutil
 import threading
+import urllib.request
+import urllib.error
 
 SOCKET_PATH = "/run/luks-manager.sock"
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -21,6 +23,39 @@ MANAGER_SCRIPT = os.path.join(BASE_DIR, "luks-manager.sh")
 NOTIFY_SCRIPT = os.path.join(BASE_DIR, "scripts", "notify-discord.py")
 
 action_lock = threading.Lock()
+
+_last_ha_check_time = 0
+_last_ha_state = "unknown"
+
+def get_ha_plug_state(env):
+    global _last_ha_check_time, _last_ha_state
+    if env.get("ENABLE_HOME_ASSISTANT") != "true":
+        return "always-on"
+    
+    ha_url = env.get("HA_URL")
+    ha_token = env.get("HA_TOKEN")
+    ha_entity_id = env.get("HA_ENTITY_ID")
+    if not ha_url or not ha_token or not ha_entity_id:
+        return "unknown"
+    
+    now = time.time()
+    if now - _last_ha_check_time < 2.0 and _last_ha_state != "unknown":
+        return _last_ha_state
+        
+    try:
+        url = f"{ha_url.rstrip('/')}/api/states/{ha_entity_id}"
+        req = urllib.request.Request(url, headers={
+            "Authorization": f"Bearer {ha_token}",
+            "Content-Type": "application/json"
+        })
+        with urllib.request.urlopen(req, timeout=1.0) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            state = data.get("state", "unknown").lower()
+            _last_ha_state = state
+            _last_ha_check_time = now
+            return state
+    except Exception:
+        return _last_ha_state if (now - _last_ha_check_time < 10.0) else "unknown"
 
 def notify_discord(event, message=""):
     if os.path.exists(NOTIFY_SCRIPT):
@@ -131,6 +166,20 @@ def find_target_block_device(vg_name, mapper_name, mount_crypto, target_dev_cfg)
     except Exception:
         pass
 
+    # Priority 3: Scan for external USB block devices that are not system disks
+    try:
+        out = subprocess.check_output(
+            ["lsblk", "-d", "-rno", "PATH,TRAN,TYPE"],
+            stderr=subprocess.DEVNULL, text=True, timeout=2
+        ).strip()
+        for line in out.splitlines():
+            parts = line.strip().split()
+            if len(parts) >= 3 and parts[1].lower() == "usb" and parts[2].lower() == "disk":
+                if os.path.exists(parts[0]):
+                    return parts[0]
+    except Exception:
+        pass
+
     return None
 
 def get_smart_data(target_dev):
@@ -216,6 +265,20 @@ def get_status():
     webdav_active = subprocess.call(["systemctl", "is-active", "--quiet", "webdav"]) == 0
     webdav_port = env.get("WEBDAV_PORT", "")
 
+    # Check Home Assistant smart plug status
+    ha_state = get_ha_plug_state(env)
+    plug_powered = (ha_state == "on" or ha_state == "always-on") or disk_present
+
+    # Multi-state detection
+    if is_mounted:
+        master_status = "mounted"
+    elif is_unlocked:
+        master_status = "unlocked"
+    elif plug_powered or vg_active or disk_present:
+        master_status = "standby"
+    else:
+        master_status = "stopped"
+
     # Volume Storage Statistics
     volumes = []
     if is_mounted:
@@ -232,10 +295,14 @@ def get_status():
     smart_info = get_smart_data(target_dev if disk_present else None)
 
     return {
-        "status": "mounted" if is_mounted else ("unlocked" if is_unlocked else "stopped"),
+        "status": master_status,
         "unlocked": is_unlocked,
         "mounted": is_mounted,
         "vg_active": vg_active,
+        "plug_state": ha_state,
+        "plug_powered": plug_powered,
+        "disk_present": disk_present,
+        "target_dev": target_dev,
         "webdav_active": webdav_active,
         "webdav_port": webdav_port,
         "vg_name": vg_name,

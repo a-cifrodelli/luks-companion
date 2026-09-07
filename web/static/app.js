@@ -145,6 +145,15 @@ function applyStatusData(data) {
             UIState.setCard("Luks", "success", `Sbloccato (/dev/mapper/${data.mapper_name || '...'})`, "Chiave in RAM (dm-crypt)");
             UIState.setCard("Mount", "idle", "Non montato", "Local Filesystem");
             UIState.setCard("Webdav", "idle", "Inattivo", "Mount Diretto Filesystem");
+        } else if (data.status === "standby") {
+            if (masterBadge) masterBadge.className = "badge badge-blue";
+            if (masterText) masterText.textContent = "STANDBY (ALIMENTATO)";
+            const lvmVal = data.vg_active ? `Attivo (${data.vg_name || 'LVM'})` : (data.disk_present ? "Inerte (Disco Rilevato)" : "Inerte (Pronto)");
+            const lvmMeta = data.vg_active ? "Volume Group Pronto" : "Pronto all'attivazione";
+            UIState.setCard("Lvm", data.vg_active ? "success" : "idle", lvmVal, lvmMeta);
+            UIState.setCard("Luks", "idle", "Sigillato (0 byte in RAM)", "Pronto per lo sblocco");
+            UIState.setCard("Mount", "idle", "Non montato", "Local Filesystem");
+            UIState.setCard("Webdav", "idle", "Inattivo", "Mount Diretto Filesystem");
         } else {
             if (masterBadge) masterBadge.className = "badge badge-red";
             if (masterText) masterText.textContent = "SPENTO / 0W STANDBY";
@@ -294,6 +303,15 @@ async function updateStatus() {
                         stopBtn.disabled = false;
                         stopBtn.textContent = "🛑 Espelli & Spegni 220V";
                     }
+                } else if (data.status === "standby" || data.plug_powered || data.disk_present) {
+                    if (unlockBtn) {
+                        unlockBtn.disabled = false;
+                        unlockBtn.textContent = "🔑 Sblocca Storage";
+                    }
+                    if (stopBtn) {
+                        stopBtn.disabled = false;
+                        stopBtn.textContent = "🛑 Spegni 220V";
+                    }
                 } else {
                     if (unlockBtn) {
                         unlockBtn.disabled = false;
@@ -301,7 +319,7 @@ async function updateStatus() {
                     }
                     if (stopBtn) {
                         stopBtn.disabled = true;
-                        stopBtn.textContent = "🛑 Espelli & Spegni 220V";
+                        stopBtn.textContent = "🛑 Storage Spento (0W)";
                     }
                 }
             }
@@ -648,7 +666,32 @@ function generateNewRandomKey() {
     }
 }
 
-function downloadBlob(blob, filename) {
+async function downloadBlob(blob, filename, suggestedTypes = []) {
+    // If File System Access API (showSaveFilePicker) is supported, open the native "Save As..." dialog
+    if (window.showSaveFilePicker) {
+        try {
+            const types = suggestedTypes.length > 0 ? suggestedTypes : [
+                {
+                    description: 'File',
+                    accept: { 'application/octet-stream': ['.header', '.key', '.img', '.jpg', '.bin', '.dat'] }
+                }
+            ];
+            const handle = await window.showSaveFilePicker({
+                suggestedName: filename,
+                types: types
+            });
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            return;
+        } catch (err) {
+            // If user cancels the Save dialog, do not trigger fallback
+            if (err.name === 'AbortError') return;
+            // Otherwise, fall back to standard <a> download
+        }
+    }
+
+    // Standard Fallback: browser <a> download
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -953,7 +996,12 @@ async function downloadHeaderBackup() {
         if (match && match[1]) filename = match[1];
 
         const blob = await res.blob();
-        downloadBlob(blob, filename);
+        await downloadBlob(blob, filename, [
+            {
+                description: 'LUKS Header Backup File (*.header)',
+                accept: { 'application/octet-stream': ['.header'] }
+            }
+        ]);
 
         logConsole(`✓ Backup Header LUKS (${blob.size} bytes) scaricato con successo: ${filename}`);
         showToast("Backup Header Completato", `File ${filename} scaricato (${(blob.size / 1024 / 1024).toFixed(1)} MB)`, "success");
