@@ -30,6 +30,8 @@ env_config = load_env()
 PORT = int(os.environ.get("WEB_PORT") or env_config.get("WEB_PORT") or 9099)
 HOST = os.environ.get("WEB_HOST") or env_config.get("WEB_HOST") or "0.0.0.0"
 
+import base64
+
 def send_socket_command(payload: dict, timeout: int = 45) -> dict:
     if not os.path.exists(SOCKET_PATH):
         return {"status": "error", "message": "Socket demone non trovato (/run/luks-manager.sock). Verificare che luks-managerd.service sia attivo."}
@@ -38,23 +40,23 @@ def send_socket_command(payload: dict, timeout: int = 45) -> dict:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
             sock.settimeout(timeout)
             sock.connect(SOCKET_PATH)
-            sock.sendall(json.dumps(payload).encode('utf-8'))
+            sock.sendall((json.dumps(payload) + "\n").encode('utf-8'))
             
-            raw_chunks = []
-            while True:
-                try:
-                    chunk = sock.recv(16384)
-                    if not chunk:
-                        break
-                    raw_chunks.append(chunk)
-                except socket.timeout:
-                    break
-            
-            if not raw_chunks:
-                return {"status": "error", "message": "Nessuna risposta ricevuta dal demone socket"}
-            
-            response_data = b"".join(raw_chunks).decode('utf-8', errors='replace')
-            return json.loads(response_data)
+            with sock.makefile('r', encoding='utf-8', errors='replace') as f:
+                last_obj = None
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            obj = json.loads(line)
+                            last_obj = obj
+                            if obj.get("event") == "done":
+                                return obj
+                        except json.JSONDecodeError:
+                            pass
+                if last_obj:
+                    return last_obj
+            return {"status": "error", "message": "Nessuna risposta valida ricevuta dal demone"}
     except Exception as e:
         return {"status": "error", "message": f"Errore IPC demone: {str(e)}"}
 
@@ -74,6 +76,41 @@ class WebAppHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def stream_socket_action(self, payload: dict, timeout: int = 60):
+        if not os.path.exists(SOCKET_PATH):
+            self.send_json({"event": "done", "status": "error", "message": "Demone non attivo"}, 503)
+            return
+
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+                sock.settimeout(timeout)
+                sock.connect(SOCKET_PATH)
+                sock.sendall((json.dumps(payload) + "\n").encode('utf-8'))
+
+                self.send_response(200)
+                self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache, no-transform")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("X-Frame-Options", "DENY")
+                self.end_headers()
+
+                with sock.makefile('r', encoding='utf-8', errors='replace') as f:
+                    for line in f:
+                        if not line:
+                            break
+                        try:
+                            self.wfile.write(line.encode('utf-8'))
+                            self.wfile.flush()
+                        except (BrokenPipeError, ConnectionResetError):
+                            break
+        except Exception as e:
+            try:
+                err_line = json.dumps({"event": "done", "status": "error", "message": f"Errore streaming IPC: {str(e)}"}) + "\n"
+                self.wfile.write(err_line.encode('utf-8'))
+                self.wfile.flush()
+            except Exception:
+                pass
+
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
@@ -82,6 +119,27 @@ class WebAppHandler(BaseHTTPRequestHandler):
             res = send_socket_command({"action": "status"}, timeout=10)
             self.send_json(res)
             return
+
+        elif path == "/api/header/backup":
+            res = send_socket_command({"action": "header_backup"}, timeout=30)
+            if res.get("status") == "ok" and res.get("header_base64"):
+                try:
+                    header_bytes = base64.b64decode(res["header_base64"])
+                    filename = res.get("filename", "luks_header_backup.header")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/octet-stream")
+                    self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+                    self.send_header("Content-Length", str(len(header_bytes)))
+                    self.send_header("X-Content-Type-Options", "nosniff")
+                    self.end_headers()
+                    self.wfile.write(header_bytes)
+                    return
+                except Exception as e:
+                    self.send_json({"status": "error", "message": f"Errore codifica download: {e}"}, 500)
+                    return
+            else:
+                self.send_json({"status": "error", "message": res.get("message", "Errore durante il backup dell'header")}, 400)
+                return
 
         # Serve static assets
         if path == "/" or path == "":
@@ -120,7 +178,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
         path = parsed.path
 
         content_length = int(self.headers.get("Content-Length", 0))
-        if content_length > 10 * 1024 * 1024:  # Max 10MB
+        if content_length > 32 * 1024 * 1024:  # Max 32MB (fits LUKS2 16MB headers)
             self.send_json({"status": "error", "message": "Payload troppo grande"}, 413)
             return
 
@@ -132,15 +190,20 @@ class WebAppHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/unlock":
-            res = send_socket_command({
+            self.stream_socket_action({
                 "action": "unlock",
                 "passphrase": req_data.get("passphrase", ""),
                 "keyfile_base64": req_data.get("keyfile_base64", "")
-            }, timeout=60)
-            self.send_json(res)
+            }, timeout=75)
 
         elif path == "/api/stop":
-            res = send_socket_command({"action": "stop"}, timeout=45)
+            self.stream_socket_action({"action": "stop"}, timeout=45)
+
+        elif path == "/api/header/restore":
+            res = send_socket_command({
+                "action": "header_restore",
+                "header_base64": req_data.get("header_base64", "")
+            }, timeout=30)
             self.send_json(res)
 
         else:

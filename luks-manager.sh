@@ -92,7 +92,7 @@ if [ -n "$LV_BACKUP" ]; then
     LV_BACKUP_PATH="/dev/${VG_NAME}/${LV_BACKUP}"
 fi
 
-CURL_FLAGS="-s -f"
+CURL_FLAGS="--connect-timeout 4 --max-time 6 -s -f"
 if [ "$HA_INSECURE_TLS" = "true" ]; then
     CURL_FLAGS="-k ${CURL_FLAGS}"
 fi
@@ -401,8 +401,14 @@ safe_power_off_sequence() {
             echo "  -> Pausa di tolleranza pre-cutoff (${CUTOFF_GRACE_SEC}s)..."
             sleep "$CUTOFF_GRACE_SEC"
 
-            echo "  -> Invio comando spegnimento 220V a Home Assistant..."
-            ha_call_service "turn_off" || true
+            echo "  -> Invio comando spegnimento 220V a Home Assistant (${HA_ENTITY_ID})..."
+            if ! ha_call_service "turn_off"; then
+                echo "  [!] Riprova spegnimento Home Assistant..."
+                sleep 1
+                ha_call_service "turn_off" || echo "  [!] ATTENZIONE: Impossibile spegnere la presa tramite Home Assistant." >&2
+            else
+                echo "  [✓] Comando spegnimento 220V inviato con successo!"
+            fi
             POWER_IS_ON=false
         fi
     fi
@@ -496,18 +502,33 @@ trap trap_cleanup SIGINT SIGTERM SIGHUP
 echo "=== LUKS MANAGER: AVVIO SISTEMA STOC CUSTODITO ==="
 if [ "$ENABLE_HOME_ASSISTANT" = "true" ]; then
     echo -e "\n[1/7] Invio comando di accensione presa a Home Assistant (${HA_ENTITY_ID})..."
-    ha_call_service "turn_on" || true
+    if ! ha_call_service "turn_on"; then
+        echo "[!] ERRORE: Impossibile comunicare con Home Assistant (${HA_URL:-N/D})." >&2
+        echo "    Verifica che il server Home Assistant sia online e che HA_TOKEN / HA_ENTITY_ID siano corretti." >&2
+        notify_discord "error" "Errore Home Assistant: server non raggiungibile o credenziali non valide."
+        exit 1
+    fi
     POWER_IS_ON=true
 
     echo "[*] Attesa conferma stato 'on' da Home Assistant..."
+    HA_POWERED=false
     for i in $(seq 1 "$HA_WAIT_TIMEOUT"); do
         STATE=$(ha_get_state)
         if [ "$STATE" == "on" ]; then
+            HA_POWERED=true
             echo "[✓] Presa smart alimentata!"
             break
         fi
         sleep 1
     done
+
+    if [ "$HA_POWERED" = false ]; then
+        echo "[!] ERRORE: La presa smart non è passata allo stato 'on' entro ${HA_WAIT_TIMEOUT}s (stato: ${STATE:-unknown})." >&2
+        echo "    Interruzione procedura per evitare attese a vuoto a presa non alimentata." >&2
+        notify_discord "error" "Home Assistant: presa '${HA_ENTITY_ID}' non passata a 'on' (stato: ${STATE:-unknown})."
+        safe_power_off_sequence
+        exit 1
+    fi
 else
     echo -e "\n[1/7] Home Assistant disabilitato (disco Always-on / autoalimentato). Salto alimentazione..."
 fi

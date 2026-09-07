@@ -67,143 +67,146 @@ function showToast(title, message, type = "info", duration = 5000) {
     }
 }
 
-// -------------------------------------------------------------------
+// // -------------------------------------------------------------------
 // 1. STATUS POLLING & UI UPDATE
 // -------------------------------------------------------------------
+function applyStatusData(data) {
+    if (!data) return;
+
+    // Global Master Status Badge
+    const masterBadge = document.getElementById("masterStatusBadge");
+    const masterText = document.getElementById("masterStatusText");
+    if (data.status === "mounted") {
+        masterBadge.className = "badge badge-green";
+        masterText.textContent = "MONTATO & OPERATIVO";
+    } else if (data.status === "unlocked") {
+        masterBadge.className = "badge badge-amber";
+        masterText.textContent = "SBLOCCATO (SMONTATO)";
+    } else {
+        masterBadge.className = "badge badge-red";
+        masterText.textContent = "SPENTO / 0W STANDBY";
+    }
+
+    // Cards
+    document.getElementById("valLvm").textContent = data.vg_active ? `Attivo (${data.vg_name})` : "Disattivato";
+    document.getElementById("valLuks").textContent = data.unlocked ? `Sbloccato (/dev/mapper/${data.mapper_name || '...' })` : "Sigillato (0 byte in RAM)";
+    document.getElementById("valMount").textContent = data.mounted ? (data.mount_crypto || "Montato") : "Non montato";
+    
+    const webdavPortStr = data.webdav_port ? ` (Porta ${data.webdav_port})` : "";
+    document.getElementById("valWebdav").textContent = data.webdav_active ? `Attivo${webdavPortStr}` : "Inattivo";
+
+    // Telemetry: S.M.A.R.T. & Hardware Health
+    const badgeSmartHealth = document.getElementById("badgeSmartHealth");
+    const badgeSmartTemp = document.getElementById("badgeSmartTemp");
+    const badgeSmartDevice = document.getElementById("badgeSmartDevice");
+
+    if (data.status === "stopped") {
+        if (badgeSmartHealth) {
+            badgeSmartHealth.className = "badge badge-gray";
+            badgeSmartHealth.textContent = "S.M.A.R.T.: Standby";
+        }
+        if (badgeSmartTemp) {
+            badgeSmartTemp.className = "badge badge-gray";
+            badgeSmartTemp.textContent = "🌡️ -- °C";
+        }
+        if (badgeSmartDevice) {
+            badgeSmartDevice.textContent = "Disco: 0W Standby";
+        }
+    } else {
+        const smart = data.smart || {};
+        if (badgeSmartHealth) {
+            if (smart.installed === false) {
+                badgeSmartHealth.className = "badge badge-amber";
+                badgeSmartHealth.textContent = "smartctl: Non installato";
+                badgeSmartHealth.title = "Installa smartmontools sul server";
+            } else if (smart.supported && smart.health === "PASSED") {
+                badgeSmartHealth.className = "badge badge-green";
+                badgeSmartHealth.textContent = "S.M.A.R.T.: Integro (PASSED)";
+            } else if (smart.supported && smart.health === "FAILED") {
+                badgeSmartHealth.className = "badge badge-red";
+                badgeSmartHealth.textContent = "S.M.A.R.T.: ALLARME GUASTO (FAILED)";
+            } else if (smart.reason) {
+                badgeSmartHealth.className = "badge badge-gray";
+                badgeSmartHealth.textContent = `S.M.A.R.T.: ${smart.reason}`;
+            } else {
+                badgeSmartHealth.className = "badge badge-gray";
+                badgeSmartHealth.textContent = "S.M.A.R.T.: N/D";
+            }
+        }
+
+        if (badgeSmartTemp) {
+            if (smart.temperature_c !== null && smart.temperature_c !== undefined) {
+                const temp = smart.temperature_c;
+                if (temp >= 55) {
+                    badgeSmartTemp.className = "badge badge-red";
+                    badgeSmartTemp.textContent = `🌡️ ${temp} °C (Caldo)`;
+                } else if (temp >= 45) {
+                    badgeSmartTemp.className = "badge badge-amber";
+                    badgeSmartTemp.textContent = `🌡️ ${temp} °C`;
+                } else {
+                    badgeSmartTemp.className = "badge badge-green";
+                    badgeSmartTemp.textContent = `🌡️ ${temp} °C`;
+                }
+            } else {
+                badgeSmartTemp.className = "badge badge-gray";
+                badgeSmartTemp.textContent = "🌡️ -- °C";
+            }
+        }
+
+        if (badgeSmartDevice) {
+            if (smart.model) {
+                const devName = smart.device ? ` (${smart.device})` : "";
+                badgeSmartDevice.textContent = `Disco: ${smart.model}${devName}`;
+            } else {
+                badgeSmartDevice.textContent = "Disco: Attivo";
+            }
+        }
+    }
+
+    // Telemetry: Storage Capacity Bars
+    const volContainer = document.getElementById("volumeBarsContainer");
+    if (volContainer) {
+        if (data.volumes && data.volumes.length > 0) {
+            let html = "";
+            data.volumes.forEach(vol => {
+                let fillClass = "";
+                if (vol.used_percent >= 90) fillClass = "danger";
+                else if (vol.used_percent >= 75) fillClass = "warn";
+
+                html += `
+                    <div class="volume-bar-card">
+                        <div class="volume-info">
+                            <span class="volume-name">📁 ${vol.name} <small style="color:var(--text-muted);font-weight:normal;">(${vol.mountpoint})</small></span>
+                            <span class="volume-usage">${vol.used_human} / ${vol.total_human} (${vol.used_percent}%)</span>
+                        </div>
+                        <div class="progress-track">
+                            <div class="progress-fill ${fillClass}" style="width: ${vol.used_percent}%"></div>
+                        </div>
+                        <div class="volume-footer">
+                            <span>Spazio disponibile: ${vol.free_human}</span>
+                            <span>Capacità totale: ${vol.total_human}</span>
+                        </div>
+                    </div>
+                `;
+            });
+            volContainer.innerHTML = html;
+        } else if (data.status === "stopped") {
+            volContainer.innerHTML = `<div class="volume-placeholder"><span>Storage in standby (0W). I dettagli dello spazio disco e telemetria S.M.A.R.T. saranno disponibili allo sblocco.</span></div>`;
+        } else {
+            volContainer.innerHTML = `<div class="volume-placeholder"><span>Nessun volume attualmente montato.</span></div>`;
+        }
+    }
+}
+
 async function updateStatus() {
     try {
         const res = await fetch("/api/status");
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
-
         if (json.status === "ok" && json.data) {
             const data = json.data;
+            applyStatusData(data);
 
-            // Global Master Status Badge
-            const masterBadge = document.getElementById("masterStatusBadge");
-            const masterText = document.getElementById("masterStatusText");
-            if (data.status === "mounted") {
-                masterBadge.className = "badge badge-green";
-                masterText.textContent = "MONTATO & OPERATIVO";
-            } else if (data.status === "unlocked") {
-                masterBadge.className = "badge badge-amber";
-                masterText.textContent = "SBLOCCATO (SMONTATO)";
-            } else {
-                masterBadge.className = "badge badge-red";
-                masterText.textContent = "SPENTO / 0W STANDBY";
-            }
-
-            // Cards
-            document.getElementById("valLvm").textContent = data.vg_active ? `Attivo (${data.vg_name})` : "Disattivato";
-            document.getElementById("valLuks").textContent = data.unlocked ? `Sbloccato (/dev/mapper/${data.mapper_name || '...' })` : "Sigillato (0 byte in RAM)";
-            document.getElementById("valMount").textContent = data.mounted ? (data.mount_crypto || "Montato") : "Non montato";
-            
-            const webdavPortStr = data.webdav_port ? ` (Porta ${data.webdav_port})` : "";
-            document.getElementById("valWebdav").textContent = data.webdav_active ? `Attivo${webdavPortStr}` : "Inattivo";
-
-            // Telemetry: S.M.A.R.T. & Hardware Health
-            const badgeSmartHealth = document.getElementById("badgeSmartHealth");
-            const badgeSmartTemp = document.getElementById("badgeSmartTemp");
-            const badgeSmartDevice = document.getElementById("badgeSmartDevice");
-
-            if (data.status === "stopped") {
-                if (badgeSmartHealth) {
-                    badgeSmartHealth.className = "badge badge-gray";
-                    badgeSmartHealth.textContent = "S.M.A.R.T.: Standby";
-                }
-                if (badgeSmartTemp) {
-                    badgeSmartTemp.className = "badge badge-gray";
-                    badgeSmartTemp.textContent = "🌡️ -- °C";
-                }
-                if (badgeSmartDevice) {
-                    badgeSmartDevice.textContent = "Disco: 0W Standby";
-                }
-            } else {
-                const smart = data.smart || {};
-                if (badgeSmartHealth) {
-                    if (smart.installed === false) {
-                        badgeSmartHealth.className = "badge badge-amber";
-                        badgeSmartHealth.textContent = "smartctl: Non installato";
-                        badgeSmartHealth.title = "Installa smartmontools sul server";
-                    } else if (smart.supported && smart.health === "PASSED") {
-                        badgeSmartHealth.className = "badge badge-green";
-                        badgeSmartHealth.textContent = "S.M.A.R.T.: Integro (PASSED)";
-                    } else if (smart.supported && smart.health === "FAILED") {
-                        badgeSmartHealth.className = "badge badge-red";
-                        badgeSmartHealth.textContent = "S.M.A.R.T.: ALLARME GUASTO (FAILED)";
-                    } else if (smart.reason) {
-                        badgeSmartHealth.className = "badge badge-gray";
-                        badgeSmartHealth.textContent = `S.M.A.R.T.: ${smart.reason}`;
-                    } else {
-                        badgeSmartHealth.className = "badge badge-gray";
-                        badgeSmartHealth.textContent = "S.M.A.R.T.: N/D";
-                    }
-                }
-
-                if (badgeSmartTemp) {
-                    if (smart.temperature_c !== null && smart.temperature_c !== undefined) {
-                        const temp = smart.temperature_c;
-                        if (temp >= 55) {
-                            badgeSmartTemp.className = "badge badge-red";
-                            badgeSmartTemp.textContent = `🌡️ ${temp} °C (Caldo)`;
-                        } else if (temp >= 45) {
-                            badgeSmartTemp.className = "badge badge-amber";
-                            badgeSmartTemp.textContent = `🌡️ ${temp} °C`;
-                        } else {
-                            badgeSmartTemp.className = "badge badge-green";
-                            badgeSmartTemp.textContent = `🌡️ ${temp} °C`;
-                        }
-                    } else {
-                        badgeSmartTemp.className = "badge badge-gray";
-                        badgeSmartTemp.textContent = "🌡️ -- °C";
-                    }
-                }
-
-                if (badgeSmartDevice) {
-                    if (smart.model) {
-                        const devName = smart.device ? ` (${smart.device})` : "";
-                        badgeSmartDevice.textContent = `Disco: ${smart.model}${devName}`;
-                    } else {
-                        badgeSmartDevice.textContent = "Disco: Attivo";
-                    }
-                }
-            }
-
-            // Telemetry: Storage Capacity Bars
-            const volContainer = document.getElementById("volumeBarsContainer");
-            if (volContainer) {
-                if (data.volumes && data.volumes.length > 0) {
-                    let html = "";
-                    data.volumes.forEach(vol => {
-                        let fillClass = "";
-                        if (vol.used_percent >= 90) fillClass = "danger";
-                        else if (vol.used_percent >= 75) fillClass = "warn";
-
-                        html += `
-                            <div class="volume-bar-card">
-                                <div class="volume-info">
-                                    <span class="volume-name">📁 ${vol.name} <small style="color:var(--text-muted);font-weight:normal;">(${vol.mountpoint})</small></span>
-                                    <span class="volume-usage">${vol.used_human} / ${vol.total_human} (${vol.used_percent}%)</span>
-                                </div>
-                                <div class="progress-track">
-                                    <div class="progress-fill ${fillClass}" style="width: ${vol.used_percent}%"></div>
-                                </div>
-                                <div class="volume-footer">
-                                    <span>Spazio disponibile: ${vol.free_human}</span>
-                                    <span>Capacità totale: ${vol.total_human}</span>
-                                </div>
-                            </div>
-                        `;
-                    });
-                    volContainer.innerHTML = html;
-                } else if (data.status === "stopped") {
-                    volContainer.innerHTML = `<div class="volume-placeholder"><span>Storage in standby (0W). I dettagli dello spazio disco e telemetria S.M.A.R.T. saranno disponibili allo sblocco.</span></div>`;
-                } else {
-                    volContainer.innerHTML = `<div class="volume-placeholder"><span>Nessun volume attualmente montato.</span></div>`;
-                }
-            }
-
-            // Enable/Disable Action Buttons based on state
             const unlockBtn = document.getElementById("btnUnlock");
             const stopBtn = document.getElementById("btnStop");
 
@@ -252,9 +255,48 @@ async function updateStatus() {
     } catch (err) {
         const masterBadge = document.getElementById("masterStatusBadge");
         const masterText = document.getElementById("masterStatusText");
-        masterBadge.className = "badge badge-red";
-        masterText.textContent = "DISCONNESSO DAL DEMONE";
+        if (masterBadge) masterBadge.className = "badge badge-red";
+        if (masterText) masterText.textContent = "DISCONNESSO DAL DEMONE";
     }
+}
+
+async function processNdjsonStream(res, onLine, onData) {
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+    let finalResult = null;
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+
+        for (const raw of lines) {
+            const line = raw.trim();
+            if (!line) continue;
+            try {
+                const eventObj = JSON.parse(line);
+                if (eventObj.event === "log" && eventObj.line) {
+                    if (onLine) onLine(eventObj.line);
+                    if (eventObj.data && onData) onData(eventObj.data);
+                } else if (eventObj.event === "done") {
+                    finalResult = eventObj;
+                    if (eventObj.data && onData) onData(eventObj.data);
+                }
+            } catch (e) {
+                if (onLine) onLine(line);
+            }
+        }
+    }
+    if (buffer.trim()) {
+        try {
+            const eventObj = JSON.parse(buffer.trim());
+            if (eventObj.event === "done") finalResult = eventObj;
+        } catch (e) {}
+    }
+    return finalResult;
 }
 
 // -------------------------------------------------------------------
@@ -392,6 +434,11 @@ async function performUnlock() {
     unlockBtn.disabled = true;
     unlockBtn.textContent = "⏳ Sblocco in corso...";
 
+    const masterBadge = document.getElementById("masterStatusBadge");
+    const masterText = document.getElementById("masterStatusText");
+    if (masterBadge) masterBadge.className = "badge badge-amber";
+    if (masterText) masterText.textContent = "SBLOCCO IN CORSO...";
+
     let payload = {};
 
     try {
@@ -438,11 +485,39 @@ async function performUnlock() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
         });
-        const json = await res.json();
 
-        if (json.status === "ok") {
+        const json = await processNdjsonStream(
+            res,
+            (line) => {
+                logConsole(line);
+                // Real-time progressive step updates
+                if (line.includes("[1/7]")) {
+                    if (masterText) masterText.textContent = "⚡ ACCENSIONE PRESA...";
+                } else if (line.includes("[2/7]")) {
+                    if (masterText) masterText.textContent = "🔌 ATTESA DISCO USB...";
+                } else if (line.includes("[3/7]")) {
+                    if (masterText) masterText.textContent = "📦 ATTIVAZIONE LVM...";
+                    const lvmEl = document.getElementById("valLvm");
+                    if (lvmEl) lvmEl.textContent = "Attivazione...";
+                } else if (line.includes("[4/7]")) {
+                    if (masterText) masterText.textContent = "🔑 SBLOCCO LUKS IN RAM...";
+                } else if (line.includes("[5/7]")) {
+                    if (masterText) masterText.textContent = "📁 MONTAGGIO FILESYSTEM...";
+                    const luksEl = document.getElementById("valLuks");
+                    if (luksEl) luksEl.textContent = "Sbloccato (RAM)";
+                } else if (line.includes("[6/7]") || line.includes("WebDAV")) {
+                    if (masterText) masterText.textContent = "🌐 AVVIO SERVIZI...";
+                    const mountEl = document.getElementById("valMount");
+                    if (mountEl) mountEl.textContent = "Montato";
+                }
+            },
+            (data) => {
+                applyStatusData(data);
+            }
+        );
+
+        if (json && json.status === "ok") {
             logConsole(`[SUCCESSO] ${json.message}`);
-            if (json.output) logConsole(json.output);
             showToast("Volume Sbloccato", json.message || "Storage montato e pronto all'uso!", "success");
             
             // Clear sensitive input
@@ -450,11 +525,14 @@ async function performUnlock() {
             document.getElementById("inputStegoPass").value = "";
             selectedKeyfileBase64 = null;
             selectedStegoImageBytes = null;
-            document.getElementById("keyfileSelectedText").style.display = "none";
-            document.getElementById("stegoSelectedText").style.display = "none";
+            const kTxt = document.getElementById("keyfileSelectedText");
+            if (kTxt) kTxt.style.display = "none";
+            const sTxt = document.getElementById("stegoSelectedText");
+            if (sTxt) sTxt.style.display = "none";
         } else {
-            logConsole(`[ERRORE] ${json.message || 'Sblocco fallito'}`);
-            showToast("Errore Sblocco", json.message || "Impossibile sbloccare il container LUKS", "error");
+            const errMsg = (json && json.message) || "Impossibile sbloccare il container LUKS";
+            logConsole(`[ERRORE] ${errMsg}`);
+            showToast("Errore Sblocco", errMsg, "error");
         }
     } catch (err) {
         logConsole(`[ERRORE] ${err.message}`);
@@ -605,6 +683,27 @@ function setupAllDropzones() {
     scInput.addEventListener("change", (e) => {
         if (e.target.files.length > 0) loadStudioCover(e.target.files[0]);
     });
+    // 4. Header Restore Dropzone
+    const hrDrop = document.getElementById("headerRestoreDropzone");
+    const hrInput = document.getElementById("headerRestoreInput");
+    if (hrDrop && hrInput) {
+        hrDrop.addEventListener("click", () => hrInput.click());
+        hrDrop.addEventListener("dragover", (e) => { e.preventDefault(); hrDrop.classList.add("dragover"); });
+        hrDrop.addEventListener("dragleave", () => hrDrop.classList.remove("dragover"));
+        hrDrop.addEventListener("drop", (e) => {
+            e.preventDefault();
+            hrDrop.classList.remove("dragover");
+            if (e.dataTransfer.files.length > 0) loadHeaderRestoreFile(e.dataTransfer.files[0]);
+        });
+        hrInput.addEventListener("change", (e) => {
+            if (e.target.files.length > 0) loadHeaderRestoreFile(e.target.files[0]);
+        });
+    }
+
+    const chkRestore = document.getElementById("chkConfirmHeaderRestore");
+    if (chkRestore) {
+        chkRestore.addEventListener("change", updateRestoreButtonState);
+    }
 }
 
 function loadRawKeyfile(file) {
@@ -665,6 +764,11 @@ async function confirmStop() {
     stopBtn.disabled = true;
     stopBtn.textContent = "⏳ Arresto in corso...";
 
+    const masterBadge = document.getElementById("masterStatusBadge");
+    const masterText = document.getElementById("masterStatusText");
+    if (masterBadge) masterBadge.className = "badge badge-amber";
+    if (masterText) masterText.textContent = "ARRESTO IN CORSO...";
+
     logConsole("Avvio procedura di arresto e spegnimento 220V...");
 
     try {
@@ -673,21 +777,170 @@ async function confirmStop() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({})
         });
-        const json = await res.json();
 
-        if (json.status === "ok") {
+        const json = await processNdjsonStream(
+            res,
+            (line) => {
+                logConsole(line);
+                if (line.includes("WebDAV")) {
+                    const wEl = document.getElementById("valWebdav");
+                    if (wEl) wEl.textContent = "Inattivo";
+                } else if (line.includes("Smontaggio") || line.includes("umount")) {
+                    const mEl = document.getElementById("valMount");
+                    if (mEl) mEl.textContent = "Smontato";
+                } else if (line.includes("Chiusura container LUKS")) {
+                    const luksEl = document.getElementById("valLuks");
+                    if (luksEl) luksEl.textContent = "Sigillato (0 byte)";
+                } else if (line.includes("Disattivazione Volume Group")) {
+                    const lvmEl = document.getElementById("valLvm");
+                    if (lvmEl) lvmEl.textContent = "Disattivato";
+                } else if (line.includes("Spegnimento alimentazione")) {
+                    if (masterText) masterText.textContent = "⚡ SPEGNIMENTO 220V...";
+                }
+            },
+            (data) => {
+                applyStatusData(data);
+            }
+        );
+
+        if (json && json.status === "ok") {
             logConsole(`[SUCCESSO] ${json.message}`);
-            if (json.output) logConsole(json.output);
             showToast("Arresto Completato", json.message || "Filesystem smontati e alimentazione 220V disattivata.", "success");
         } else {
-            logConsole(`[ERRORE] ${json.message}`);
-            showToast("Errore Arresto", json.message || "Errore durante l'arresto", "error");
+            const errMsg = (json && json.message) || "Errore durante l'arresto";
+            logConsole(`[ERRORE] ${errMsg}`);
+            showToast("Errore Arresto", errMsg, "error");
         }
     } catch (err) {
         logConsole(`[ERRORE RETE] ${err.message}`);
         showToast("Errore di Rete", err.message, "error");
     } finally {
         stopBtn.textContent = "🛑 Espelli & Spegni 220V";
+        updateStatus();
+    }
+}
+
+// -------------------------------------------------------------------
+// 9. LUKS HEADER BACKUP & DISASTER RECOVERY
+// -------------------------------------------------------------------
+let selectedHeaderRestoreBase64 = null;
+let selectedHeaderRestoreName = null;
+
+function openHeaderBackupModal() {
+    setHeaderTab('backup');
+    document.getElementById("headerBackupModal").classList.add("active");
+}
+
+function closeHeaderBackupModal() {
+    document.getElementById("headerBackupModal").classList.remove("active");
+}
+
+function setHeaderTab(tab) {
+    const tabB = document.getElementById("tabHeaderBackup");
+    const tabR = document.getElementById("tabHeaderRestore");
+    const secB = document.getElementById("secHeaderBackup");
+    const secR = document.getElementById("secHeaderRestore");
+
+    if (tabB) tabB.classList.toggle("active", tab === "backup");
+    if (tabR) tabR.classList.toggle("active", tab === "restore");
+    if (secB) secB.style.display = tab === "backup" ? "block" : "none";
+    if (secR) secR.style.display = tab === "restore" ? "block" : "none";
+}
+
+async function downloadHeaderBackup() {
+    const btn = document.getElementById("btnDownloadHeader");
+    btn.disabled = true;
+    btn.textContent = "⏳ Generazione Backup Header...";
+
+    logConsole("Richiesta backup header LUKS in memoria sicura (/dev/shm)...");
+
+    try {
+        const res = await fetch("/api/header/backup");
+        if (!res.ok) {
+            const errJson = await res.json().catch(() => ({}));
+            throw new Error(errJson.message || `Errore HTTP ${res.status}`);
+        }
+
+        const disposition = res.headers.get("Content-Disposition") || "";
+        let filename = "luks_header_backup.header";
+        const match = disposition.match(/filename="?([^";]+)"?/);
+        if (match && match[1]) filename = match[1];
+
+        const blob = await res.blob();
+        downloadBlob(blob, filename);
+
+        logConsole(`✓ Backup Header LUKS (${blob.size} bytes) scaricato con successo: ${filename}`);
+        showToast("Backup Header Completato", `File ${filename} scaricato (${(blob.size / 1024 / 1024).toFixed(1)} MB)`, "success");
+    } catch (err) {
+        logConsole(`[ERRORE BACKUP] ${err.message}`);
+        showToast("Errore Backup Header", err.message, "error");
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "⬇️ Genera & Scarica Backup Header (.header)";
+    }
+}
+
+function loadHeaderRestoreFile(file) {
+    selectedHeaderRestoreName = file.name;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const bytes = new Uint8Array(e.target.result);
+        selectedHeaderRestoreBase64 = bytesToBase64(bytes);
+        const txt = document.getElementById("headerRestoreSelectedText");
+        if (txt) {
+            txt.textContent = `✓ File header caricato: ${selectedHeaderRestoreName} (${bytes.length} bytes)`;
+            txt.style.display = "block";
+        }
+        updateRestoreButtonState();
+        logConsole(`File Header caricato in memoria browser: ${selectedHeaderRestoreName} (${bytes.length} bytes)`);
+        showToast("Header Caricato", `${selectedHeaderRestoreName}`, "info");
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function updateRestoreButtonState() {
+    const chk = document.getElementById("chkConfirmHeaderRestore");
+    const btn = document.getElementById("btnRestoreHeader");
+    if (btn) {
+        btn.disabled = !(selectedHeaderRestoreBase64 && chk && chk.checked);
+    }
+}
+
+async function performHeaderRestore() {
+    if (!selectedHeaderRestoreBase64) {
+        showToast("Attenzione", "Selezionare prima un file .header valido.", "warning");
+        return;
+    }
+
+    const btn = document.getElementById("btnRestoreHeader");
+    btn.disabled = true;
+    btn.textContent = "⏳ Ripristino in corso...";
+
+    logConsole(`Avvio Disaster Recovery: ripristino header LUKS da ${selectedHeaderRestoreName}...`);
+
+    try {
+        const res = await fetch("/api/header/restore", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ header_base64: selectedHeaderRestoreBase64 })
+        });
+        const json = await res.json();
+
+        if (json.status === "ok") {
+            logConsole(`[SUCCESSO DISASTER RECOVERY] ${json.message}`);
+            showToast("Header Ripristinato", json.message, "success");
+            closeHeaderBackupModal();
+            selectedHeaderRestoreBase64 = null;
+        } else {
+            logConsole(`[ERRORE DISASTER RECOVERY] ${json.message}`);
+            showToast("Errore Ripristino", json.message, "error");
+        }
+    } catch (err) {
+        logConsole(`[ERRORE] ${err.message}`);
+        showToast("Errore di Rete", err.message, "error");
+    } finally {
+        btn.textContent = "⚠️ Avvia Ripristino Header";
+        updateRestoreButtonState();
         updateStatus();
     }
 }

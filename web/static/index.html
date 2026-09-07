@@ -22,6 +22,9 @@
     </div>
 
     <div class="header-actions">
+      <button class="btn btn-outline" onclick="openHeaderBackupModal()">
+        🛡️ Backup Header
+      </button>
       <button class="btn btn-outline" onclick="openStegoStudioModal()">
         🎨 Stego Key Studio
       </button>
@@ -230,6 +233,74 @@
           <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
             <button class="btn btn-sm btn-outline" onclick="downloadRawKeyfile()">
               ⬇️ Scarica anche il file grezzo vault.key
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Header Backup & Disaster Recovery Modal -->
+  <div id="headerBackupModal" class="modal-overlay">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span>🛡️</span>
+          <h3>Gestione & Backup Header LUKS</h3>
+        </div>
+        <button class="modal-close" onclick="closeHeaderBackupModal()">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="tabs" style="margin-bottom: 1.25rem;">
+          <button id="tabHeaderBackup" class="tab-btn active" onclick="setHeaderTab('backup')">💾 Backup di Sicurezza</button>
+          <button id="tabHeaderRestore" class="tab-btn" onclick="setHeaderTab('restore')">⚠️ Disaster Recovery (Ripristino)</button>
+        </div>
+
+        <!-- Tab 1: Download Backup Header -->
+        <div id="secHeaderBackup">
+          <div style="background: rgba(56, 189, 248, 0.06); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 8px; padding: 1rem; margin-bottom: 1.25rem; font-size: 0.9rem; line-height: 1.5; color: var(--text-secondary);">
+            <strong style="color: var(--accent-cyan);">ℹ️ Perché fare il backup dell'Header?</strong><br>
+            L'header LUKS2 contiene i keyslot e le chiavi master necessarie per accedere al filesystem cifrato. Se i primi settori del disco vengono danneggiati o sovrascritti, <strong>tutti i dati sarebbero irrecuperabili anche con la password corretta</strong>.<br><br>
+            Questo backup crea un file binario <code>.header</code> (~16 MB) in sola lettura. Scaricalo e conservalo in un luogo sicuro (es. pendrive offline o archivio protetto).
+          </div>
+
+          <div style="text-align: center; padding: 1rem 0;">
+            <button id="btnDownloadHeader" class="btn btn-primary" onclick="downloadHeaderBackup()">
+              ⬇️ Genera & Scarica Backup Header (.header)
+            </button>
+          </div>
+        </div>
+
+        <!-- Tab 2: Disaster Recovery Restore -->
+        <div id="secHeaderRestore" style="display: none;">
+          <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; padding: 1rem; margin-bottom: 1.25rem; font-size: 0.9rem; line-height: 1.5; color: var(--text-secondary);">
+            <strong style="color: var(--accent-red);">⚠️ ATTENZIONE: Procedura di Ripristino di Emergenza</strong><br>
+            Il ripristino sovrascrive i primi 16MB del volume cifrato con l'header fornito. Usare <strong>SOLO</strong> se il disco non si apre più a causa di corruzione dell'header.<br>
+            <em>Nota di sicurezza:</em> Se ripristini il backup originale del disco, i tuoi file rimarranno intatti. Lo storage deve essere sigillato e non montato.
+          </div>
+
+          <div class="input-group">
+            <label>Seleziona o trascina il file <code>.header</code> di backup:</label>
+            <div id="headerRestoreDropzone" class="dropzone">
+              <div class="dropzone-icon">🛡️</div>
+              <div class="dropzone-text">Trascina qui il file <strong>.header</strong> oppure <strong>clicca per sfogliare</strong></div>
+              <div id="headerRestoreSelectedText" class="file-selected" style="display: none;"></div>
+            </div>
+            <input type="file" id="headerRestoreInput" accept=".header,.bin" style="display: none;" />
+          </div>
+
+          <div style="margin-top: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+            <input type="checkbox" id="chkConfirmHeaderRestore" style="width: 18px; height: 18px; cursor: pointer;" />
+            <label for="chkConfirmHeaderRestore" style="font-size: 0.85rem; color: var(--text-primary); cursor: pointer;">
+              Confermo di voler sovrascrivere l'header LUKS su disco con questo file di backup.
+            </label>
+          </div>
+
+          <div style="margin-top: 1.25rem; text-align: right;">
+            <button id="btnRestoreHeader" class="btn btn-danger" onclick="performHeaderRestore()" disabled>
+              ⚠️ Avvia Ripristino Header
             </button>
           </div>
         </div>

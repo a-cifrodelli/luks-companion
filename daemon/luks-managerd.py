@@ -10,6 +10,7 @@ import subprocess
 import signal
 import base64
 import time
+import datetime
 import shutil
 import threading
 
@@ -248,7 +249,7 @@ def get_status():
 
 def send_response(conn, payload):
     try:
-        data = json.dumps(payload).encode('utf-8')
+        data = (json.dumps(payload) + "\n").encode('utf-8')
         conn.sendall(data)
     except (BrokenPipeError, ConnectionResetError, OSError):
         pass
@@ -262,17 +263,17 @@ def handle_client(conn):
         try:
             req = json.loads(data.decode('utf-8'))
         except json.JSONDecodeError:
-            send_response(conn, {"status": "error", "message": "Richiesta JSON non valida"})
+            send_response(conn, {"event": "done", "status": "error", "message": "Richiesta JSON non valida"})
             return
 
         action = req.get("action", "")
 
         if action == "status":
-            send_response(conn, {"status": "ok", "data": get_status()})
+            send_response(conn, {"event": "done", "status": "ok", "data": get_status()})
 
         elif action == "unlock":
             if not action_lock.acquire(blocking=False):
-                send_response(conn, {"status": "busy", "message": "Un'altra operazione è già in corso sul disco..."})
+                send_response(conn, {"event": "done", "status": "busy", "message": "Un'altra operazione è già in corso sul disco..."})
                 return
 
             try:
@@ -283,7 +284,7 @@ def handle_client(conn):
                     try:
                         key_payload = base64.b64decode(req["keyfile_base64"])
                     except Exception as e:
-                        send_response(conn, {"status": "error", "message": f"Decodifica keyfile base64 fallita: {e}"})
+                        send_response(conn, {"event": "done", "status": "error", "message": f"Decodifica keyfile base64 fallita: {e}"})
                         return
 
                 # 2. Plain passphrase string (from passphrase tab) - NO trailing newline!
@@ -293,36 +294,57 @@ def handle_client(conn):
                 if not key_payload:
                     err_msg = "Nessuna passphrase o keyfile fornito"
                     notify_discord("error", err_msg)
-                    send_response(conn, {"status": "error", "message": err_msg})
+                    send_response(conn, {"event": "done", "status": "error", "message": err_msg})
                     return
 
                 proc = subprocess.Popen(
                     ["/usr/bin/env", "bash", MANAGER_SCRIPT, "unlock", "--no-watchdog"],
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
+                    stderr=subprocess.STDOUT
                 )
-                stdout_bytes, stderr_bytes = proc.communicate(input=key_payload)
-                
-                # Wipe key payload from RAM
+
+                # Feed stdin in background thread
+                def write_stdin():
+                    try:
+                        proc.stdin.write(key_payload)
+                        proc.stdin.flush()
+                        proc.stdin.close()
+                    except Exception:
+                        pass
+
+                threading.Thread(target=write_stdin, daemon=True).start()
+
+                full_output = []
+                for raw_line in iter(proc.stdout.readline, b''):
+                    line_str = raw_line.decode('utf-8', errors='replace').rstrip('\r\n')
+                    if line_str:
+                        full_output.append(line_str)
+                        send_response(conn, {
+                            "event": "log",
+                            "line": line_str,
+                            "data": get_status()
+                        })
+
+                proc.wait()
                 del key_payload
 
-                stdout = stdout_bytes.decode('utf-8', errors='replace').strip()
-                stderr = stderr_bytes.decode('utf-8', errors='replace').strip()
-                
                 if proc.returncode == 0:
                     send_response(conn, {
+                        "event": "done",
                         "status": "ok",
                         "message": "Volume sbloccato e montato con successo",
-                        "output": stdout,
+                        "output": "\n".join(full_output),
                         "data": get_status()
                     })
                 else:
-                    err_msg = stderr or stdout or "Errore durante lo sblocco"
+                    err_msg = full_output[-1] if full_output else "Errore durante lo sblocco"
                     notify_discord("error", err_msg)
                     send_response(conn, {
+                        "event": "done",
                         "status": "error",
                         "message": err_msg,
+                        "output": "\n".join(full_output),
                         "data": get_status()
                     })
             finally:
@@ -330,44 +352,189 @@ def handle_client(conn):
 
         elif action == "stop":
             if not action_lock.acquire(blocking=False):
-                send_response(conn, {"status": "busy", "message": "Operazione di arresto già in corso..."})
+                send_response(conn, {"event": "done", "status": "busy", "message": "Operazione di arresto già in corso..."})
                 return
 
             try:
                 proc = subprocess.Popen(
                     ["/usr/bin/env", "bash", MANAGER_SCRIPT, "stop"],
-                    stdin=subprocess.PIPE,
+                    stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True
+                    stderr=subprocess.STDOUT
                 )
-                stdout, stderr = proc.communicate()
-                
+                full_output = []
+                for raw_line in iter(proc.stdout.readline, b''):
+                    line_str = raw_line.decode('utf-8', errors='replace').rstrip('\r\n')
+                    if line_str:
+                        full_output.append(line_str)
+                        send_response(conn, {
+                            "event": "log",
+                            "line": line_str,
+                            "data": get_status()
+                        })
+
+                proc.wait()
+
                 if proc.returncode == 0:
                     send_response(conn, {
+                        "event": "done",
                         "status": "ok",
                         "message": "Procedura di teardown e spegnimento completata",
-                        "output": stdout.strip(),
+                        "output": "\n".join(full_output),
                         "data": get_status()
                     })
                 else:
-                    err_msg = stderr.strip() or stdout.strip() or "Errore durante l'arresto"
+                    err_msg = full_output[-1] if full_output else "Errore durante l'arresto"
                     notify_discord("error", err_msg)
                     send_response(conn, {
+                        "event": "done",
                         "status": "error",
                         "message": err_msg,
+                        "output": "\n".join(full_output),
                         "data": get_status()
                     })
             finally:
                 action_lock.release()
 
+        elif action == "header_backup":
+            env = load_env()
+            vg_name = env.get("VG_NAME", "")
+            lv_crypto = env.get("LV_CRYPTO", "")
+            if not vg_name or not lv_crypto:
+                send_response(conn, {"event": "done", "status": "error", "message": "VG_NAME o LV_CRYPTO non configurati nel file .env"})
+                return
+
+            lv_path = f"/dev/{vg_name}/{lv_crypto}"
+            
+            # Activate LVM VG if not yet activated
+            if not os.path.exists(lv_path):
+                subprocess.call(["vgscan", "--mknodes"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.call(["vgchange", "-ay", vg_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            if not os.path.exists(lv_path):
+                send_response(conn, {"event": "done", "status": "error", "message": f"Dispositivo {lv_path} non trovato. Verificare che il disco sia alimentato e connesso."})
+                return
+
+            temp_header = "/dev/shm/luks_header_backup.bin"
+            try:
+                res = subprocess.run(
+                    ["cryptsetup", "luksHeaderBackup", lv_path, "--header-backup-file", temp_header],
+                    capture_output=True,
+                    text=True
+                )
+                if res.returncode != 0:
+                    send_response(conn, {"event": "done", "status": "error", "message": f"Errore cryptsetup: {res.stderr.strip()}"})
+                    return
+
+                with open(temp_header, "rb") as f:
+                    header_bytes = f.read()
+
+                header_b64 = base64.b64encode(header_bytes).decode('ascii')
+                date_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"luks_header_{vg_name}_{lv_crypto}_{date_str}.header"
+
+                send_response(conn, {
+                    "event": "done",
+                    "status": "ok",
+                    "header_base64": header_b64,
+                    "filename": filename,
+                    "size_bytes": len(header_bytes)
+                })
+            finally:
+                if os.path.exists(temp_header):
+                    try:
+                        subprocess.call(["shred", "-u", temp_header], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    except Exception:
+                        try:
+                            os.remove(temp_header)
+                        except OSError:
+                            pass
+
+        elif action == "header_restore":
+            if not action_lock.acquire(blocking=False):
+                send_response(conn, {"event": "done", "status": "busy", "message": "Un'altra operazione è già in corso sul disco..."})
+                return
+
+            try:
+                env = load_env()
+                vg_name = env.get("VG_NAME", "")
+                lv_crypto = env.get("LV_CRYPTO", "")
+                mapper_name = env.get("MAPPER_NAME", "")
+                storage_base = env.get("STORAGE_BASE", "/srv/storage")
+                mount_crypto = os.path.join(storage_base, mapper_name) if mapper_name else ""
+
+                # Safety check: Cannot restore header while volume is mounted or mapper is open
+                if (mount_crypto and os.path.ismount(mount_crypto)) or (mapper_name and os.path.exists(f"/dev/mapper/{mapper_name}")):
+                    send_response(conn, {
+                        "event": "done",
+                        "status": "error",
+                        "message": "Impossibile ripristinare l'header mentre lo storage è aperto o montato. Arrestare prima il volume!"
+                    })
+                    return
+
+                header_b64 = req.get("header_base64", "")
+                if not header_b64:
+                    send_response(conn, {"event": "done", "status": "error", "message": "Nessun file header caricato per il ripristino"})
+                    return
+
+                try:
+                    header_bytes = base64.b64decode(header_b64)
+                except Exception as e:
+                    send_response(conn, {"event": "done", "status": "error", "message": f"Dati header non validi: {e}"})
+                    return
+
+                lv_path = f"/dev/{vg_name}/{lv_crypto}"
+                if not os.path.exists(lv_path):
+                    subprocess.call(["vgscan", "--mknodes"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    subprocess.call(["vgchange", "-ay", vg_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+                if not os.path.exists(lv_path):
+                    send_response(conn, {"event": "done", "status": "error", "message": f"Dispositivo {lv_path} non trovato. Verificare che il disco sia connesso."})
+                    return
+
+                temp_restore = "/dev/shm/luks_header_restore.bin"
+                try:
+                    with open(temp_restore, "wb") as f:
+                        f.write(header_bytes)
+                    os.chmod(temp_restore, 0o600)
+
+                    res = subprocess.run(
+                        ["cryptsetup", "luksHeaderRestore", lv_path, "--header-backup-file", temp_restore, "--batch-mode"],
+                        capture_output=True,
+                        text=True
+                    )
+                    if res.returncode == 0:
+                        send_response(conn, {
+                            "event": "done",
+                            "status": "ok",
+                            "message": "Header LUKS ripristinato con successo sul volume!",
+                            "output": res.stdout.strip()
+                        })
+                    else:
+                        send_response(conn, {
+                            "event": "done",
+                            "status": "error",
+                            "message": f"Errore cryptsetup durante il ripristino: {res.stderr.strip()}"
+                        })
+                finally:
+                    if os.path.exists(temp_restore):
+                        try:
+                            subprocess.call(["shred", "-u", temp_restore], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        except Exception:
+                            try:
+                                os.remove(temp_restore)
+                            except OSError:
+                                pass
+            finally:
+                action_lock.release()
+
         else:
-            send_response(conn, {"status": "error", "message": f"Azione '{action}' sconosciuta"})
+            send_response(conn, {"event": "done", "status": "error", "message": f"Azione '{action}' sconosciuta"})
 
     except (BrokenPipeError, ConnectionResetError):
         pass
     except Exception as e:
-        send_response(conn, {"status": "error", "message": str(e)})
+        send_response(conn, {"event": "done", "status": "error", "message": str(e)})
     finally:
         try:
             conn.close()
