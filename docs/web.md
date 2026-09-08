@@ -134,13 +134,5 @@ storage.your-domain.lan {
 2. **📄 Keyfile (.key)**: Drag & drop diretto di file binari ad alta entropia (512 byte).
 3. **🖼️ Foto Stenografica**: Drag & drop di qualsiasi foto contenente chiavi cifrate con estrazione in RAM (Web Crypto API).
 4. **🎨 Stego Key Studio**: Generatore integrato di chiavi CSPRNG 4096-bit con embedding visuale ed esportazione client-side senza comunicare col server:
-
-![Stego Key Studio](media/stego.png)
-
 5. **💾 Backup Header LUKS2**: Generazione e download con un click di un dump atomico dell'header crittografico:
-
-![Gestione e Backup Header LUKS](media/generate-header.png)
-
 6. **⚠️ Disaster Recovery (Ripristino Header)**: Modale di soccorso per ripristinare un header su storage corrotto con salvaguardia dei blocchi:
-
-![Disaster Recovery Ripristino Header](media/recover-header.png)
