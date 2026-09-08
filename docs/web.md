@@ -16,9 +16,9 @@ flowchart LR
     Socket[("<b>UNIX Domain Socket</b><br/><code>/run/luks-manager.sock</code>")]
     Daemon["<b>luks-managerd</b><br/><i>Root Daemon</i>"]
 
-    Browser -->|HTTPS (443)| ReverseProxy
-    ReverseProxy -->|HTTP (:9099)| Web
-    Web -->|JSON IPC (NDJSON Stream)| Socket
+    Browser -->|"HTTPS (443)"| ReverseProxy
+    ReverseProxy -->|"HTTP (:9099)"| Web
+    Web -->|"JSON IPC (NDJSON Stream)"| Socket
     Socket --> Daemon
 ```
 

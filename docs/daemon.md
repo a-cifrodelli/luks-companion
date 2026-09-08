@@ -32,7 +32,7 @@ flowchart LR
     Socket -->|IPC| Daemon
     Daemon -->|Orchestrates| Engine
     Engine -->|Direct Control| Storage
-    Daemon -->|NDJSON Stream / Response| Socket
+    Daemon -->|"NDJSON Stream / Response"| Socket
     Socket -->|Returns Result| API
 ```
 

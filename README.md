@@ -95,7 +95,7 @@ flowchart TD
     Purge --> Spindown
     Spindown --> Verify
     Verify -->|8. SCSI STOP Confirmed| Drive
-    Verify -->|9. Disconnect Confirmed -> Turn OFF| HA
+    Verify -->|"9. Disconnect Confirmed -> Turn OFF"| HA
     HA -->|0W Standby Cutoff| Plug
 ```
 
