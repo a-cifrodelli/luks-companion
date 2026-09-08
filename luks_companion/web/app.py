@@ -180,8 +180,10 @@ class WebGatewayHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
 
-        elif path in ("/flowchart", "/flowchart.html"):
-            flowchart_path = os.path.join(self.config.base_dir, "docs", "luks_manager_flowchart.html")
+        elif path in ("/flowchart", "/flowchart/", "/flowchart/index.html"):
+            flowchart_path = os.path.join(self.config.base_dir, "docs", "flowchart", "index.html")
+            if not os.path.exists(flowchart_path):
+                flowchart_path = os.path.join(self.config.base_dir, "docs", "luks_manager_flowchart.html")
             if os.path.exists(flowchart_path):
                 try:
                     with open(flowchart_path, "rb") as f:
@@ -200,8 +202,30 @@ class WebGatewayHandler(BaseHTTPRequestHandler):
                 self.send_json({"status": "error", "message": "File flowchart non trovato"}, 404)
                 return
 
-        elif path == "/vis-network.min.js":
-            vis_path = os.path.join(self.config.base_dir, "docs", "vis-network.min.js")
+        elif path in ("/flowchart/flowchart.js", "/flowchart.js"):
+            js_path = os.path.join(self.config.base_dir, "docs", "flowchart", "flowchart.js")
+            if os.path.exists(js_path):
+                try:
+                    with open(js_path, "rb") as f:
+                        content = f.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/javascript; charset=utf-8")
+                    self.send_header("Content-Length", str(len(content)))
+                    self.send_header("Cache-Control", "no-cache")
+                    self.end_headers()
+                    self.wfile.write(content)
+                    return
+                except Exception as e:
+                    self.send_json({"status": "error", "message": f"Errore lettura flowchart.js: {e}"}, 500)
+                    return
+            else:
+                self.send_json({"status": "error", "message": "File flowchart.js non trovato"}, 404)
+                return
+
+        elif path in ("/flowchart/vis-network.min.js", "/vis-network.min.js"):
+            vis_path = os.path.join(self.config.base_dir, "docs", "flowchart", "vis-network.min.js")
+            if not os.path.exists(vis_path):
+                vis_path = os.path.join(self.config.base_dir, "docs", "vis-network.min.js")
             if os.path.exists(vis_path):
                 try:
                     with open(vis_path, "rb") as f:
@@ -216,6 +240,12 @@ class WebGatewayHandler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
             self.serve_static(path)
+
+        elif path in ("/flowchart.html", "/luks_manager_flowchart.html"):
+            self.send_response(302)
+            self.send_header("Location", "/flowchart")
+            self.end_headers()
+            return
 
         elif path in ("/demo", "/mock"):
             self.send_response(302)

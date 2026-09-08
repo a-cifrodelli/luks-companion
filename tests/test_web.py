@@ -133,11 +133,14 @@ def test_web_gateway_header_backup_download():
 def test_web_gateway_flowchart_route(tmp_path):
     cfg = Config()
     cfg.base_dir = str(tmp_path)
-    docs_dir = tmp_path / "docs"
-    docs_dir.mkdir()
-    flowchart_file = docs_dir / "luks_manager_flowchart.html"
-    flowchart_file.write_text("<html>Flowchart Test</html>", encoding="utf-8")
+    fc_dir = tmp_path / "docs" / "flowchart"
+    fc_dir.mkdir(parents=True)
+    flowchart_file = fc_dir / "index.html"
+    flowchart_file.write_text("<html>Flowchart Index Test</html>", encoding="utf-8")
+    js_file = fc_dir / "flowchart.js"
+    js_file.write_text("console.log('Flowchart JS Test');", encoding="utf-8")
 
+    # 1. Test /flowchart
     handler = WebGatewayHandler.__new__(WebGatewayHandler)
     handler.config = cfg
     handler.path = "/flowchart"
@@ -163,7 +166,23 @@ def test_web_gateway_flowchart_route(tmp_path):
     assert handler.response_code == 200
     headers_dict = dict(handler.headers_sent)
     assert "text/html" in headers_dict.get("Content-Type", "")
-    assert b"Flowchart Test" in handler.wfile.getvalue()
+    assert b"Flowchart Index Test" in handler.wfile.getvalue()
+
+    # 2. Test /flowchart/flowchart.js
+    handler_js = WebGatewayHandler.__new__(WebGatewayHandler)
+    handler_js.config = cfg
+    handler_js.path = "/flowchart/flowchart.js"
+    handler_js.wfile = io.BytesIO()
+    handler_js.headers_sent = []
+    handler_js.response_code = None
+    handler_js.send_response = lambda code: setattr(handler_js, "response_code", code)
+    handler_js.send_header = lambda k, v: handler_js.headers_sent.append((k, v))
+    handler_js.end_headers = lambda: None
+
+    handler_js.do_GET()
+    assert handler_js.response_code == 200
+    assert "application/javascript" in dict(handler_js.headers_sent).get("Content-Type", "")
+    assert b"Flowchart JS Test" in handler_js.wfile.getvalue()
 
 
 def test_web_gateway_mock_mode():

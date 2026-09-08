@@ -1,0 +1,1114 @@
+    const allNodesData = [
+  {
+    "id": "client_ui",
+    "label": "💻 Client Tier\nBrowser WebUI / CLI / REST",
+    "level": 0,
+    "group": "client",
+    "color": {
+      "background": "#0369a1",
+      "border": "#38bdf8",
+      "highlight": {
+        "background": "#0284c7",
+        "border": "#7dd3fc"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "bold": true,
+      "size": 14
+    },
+    "shape": "box",
+    "margin": 12,
+    "meta": {
+      "badge": "Client / Operatore",
+      "badgeClass": "tag-aux",
+      "title": "💻 Client Tier (WebUI / CLI / REST)",
+      "privilege": "Utente Esterno / Amministratore Locale",
+      "cmd": "Browser HTTP (:9099) oppure ./luks-manager.sh",
+      "desc": "Punto di ingresso per tutte le operazioni di gestione dello storage cifrato. L'utente può richiedere sblocco, arresto, diagnostica o backup header.",
+      "security": "Nessun accesso diretto al disco: ogni comando transita dal gateway web isolato o dal socket locale protetto."
+    }
+  },
+  {
+    "id": "web_gateway",
+    "label": "🌐 luks-web.service\nWeb Gateway HTTP (:9099)",
+    "level": 1,
+    "group": "unprivileged",
+    "color": {
+      "background": "#0f766e",
+      "border": "#2dd4bf",
+      "highlight": {
+        "background": "#14b8a6",
+        "border": "#99f6e4"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "bold": true,
+      "size": 13
+    },
+    "shape": "box",
+    "margin": 12,
+    "meta": {
+      "badge": "Unprivileged Service",
+      "badgeClass": "tag-unpriv",
+      "title": "🌐 luks-web.service (Gateway Web)",
+      "privilege": "Utente luks-web:luks-web (Non-root, shell /usr/bin/nologin)",
+      "cmd": "python3 -m luks_companion web --drop-privileges luks-web",
+      "desc": "Gateway web HTTP multithread (ThreadingWebGatewayServer). Gestisce il serving della dashboard HTML5 e lo streaming in tempo reale di log ed eventi (NDJSON). Non ha diritti di root.",
+      "security": "Principio del Minimo Privilegio: anche in caso di compromissione del server HTTP, l'attaccante non può accedere al kernel né aprire container LUKS2."
+    }
+  },
+  {
+    "id": "ipc_socket",
+    "label": "🔒 IPC UNIX Socket\n/run/luks-manager.sock (0660)",
+    "level": 2,
+    "group": "ipc",
+    "color": {
+      "background": "#4338ca",
+      "border": "#818cf8",
+      "highlight": {
+        "background": "#4f46e5",
+        "border": "#c7d2fe"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "bold": true,
+      "size": 13
+    },
+    "shape": "box",
+    "margin": 12,
+    "meta": {
+      "badge": "IPC Ristretto",
+      "badgeClass": "tag-ipc",
+      "title": "🔒 IPC UNIX Domain Socket",
+      "privilege": "Permessi 0660 (root:luks-web)",
+      "cmd": "AF_UNIX socket stream /run/luks-manager.sock",
+      "desc": "Canale di comunicazione sicuro locale in memoria RAM (/run). Collega il gateway web non privilegiato al demone master root, trasmettendo i comandi e reindirizzando gli stream di output riga per riga.",
+      "security": "Isolamento POSIX rigoroso: accessibile solo da root e dai membri del gruppo luks-web. Utenti non autorizzati ricevono Permission Denied."
+    }
+  },
+  {
+    "id": "daemon_master",
+    "label": "⚙️ luks-managerd.service\nMaster Storage Daemon (Root)",
+    "level": 3,
+    "group": "root_daemon",
+    "color": {
+      "background": "#6b21a8",
+      "border": "#c084fc",
+      "highlight": {
+        "background": "#7e22ce",
+        "border": "#e9d5ff"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "bold": true,
+      "size": 14
+    },
+    "shape": "box",
+    "margin": 14,
+    "meta": {
+      "badge": "Master Daemon (Root)",
+      "badgeClass": "tag-root",
+      "title": "⚙️ luks-managerd.service (Supervisore Storage)",
+      "privilege": "root (UID 0)",
+      "cmd": "python3 -m luks_companion daemon",
+      "desc": "Demone supervisore sempre attivo in background. Gestisce il lock di concorrenza single-flight (impedisce tentativi di sblocco/arresto concorrenti), legge le configurazioni e orchestra StorageEngine.",
+      "security": "Unico componente ad avere i privilegi di root necessari per eseguire chiamate kernel LVM, dm-crypt, cryptsetup e udisksctl."
+    }
+  },
+  {
+    "id": "config_vault",
+    "label": "🔐 Config Vault\n.env (root:root 600)",
+    "level": 3,
+    "group": "security",
+    "color": {
+      "background": "#312e81",
+      "border": "#6366f1",
+      "highlight": {
+        "background": "#3730a3",
+        "border": "#a5b4fc"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "size": 12
+    },
+    "shape": "box",
+    "margin": 10,
+    "meta": {
+      "badge": "Configurazione Protetta",
+      "badgeClass": "tag-ipc",
+      "title": "🔐 Config Vault (.env)",
+      "privilege": "root:root 600 (Permessi rigorosi)",
+      "cmd": "Config.from_env_file()",
+      "desc": "Contiene le credenziali di sistema: URL e token di Home Assistant, webhook Discord, nomi LVM e parametri di timeout.",
+      "security": "Inaccessibile agli utenti non-root e all'utente luks-web. Letto unicamente dal demone all'avvio."
+    }
+  },
+  {
+    "id": "sub_ha",
+    "label": "🔌 Home Assistant Client\nREST API (Cache 2s)",
+    "level": 4,
+    "group": "aux",
+    "color": {
+      "background": "#1e3a5f",
+      "border": "#38bdf8",
+      "highlight": {
+        "background": "#0369a1",
+        "border": "#7dd3fc"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "size": 12
+    },
+    "shape": "box",
+    "margin": 10,
+    "meta": {
+      "badge": "Hardware Power Control",
+      "badgeClass": "tag-aux",
+      "title": "🔌 Client Home Assistant REST API",
+      "privilege": "Bearer Token Authorization HTTP",
+      "cmd": "HAClient.turn_on() / turn_off() / get_state()",
+      "desc": "Controlla la presa smart 220V (Tapo/Shelly/Sonoff). Include caching intelligente di 2 secondi anti-flooding per garantire risposte istantanee alla dashboard web.",
+      "security": "Se Home Assistant è disabilitato in .env, il motore opera in modalità Always-On senza errori."
+    }
+  },
+  {
+    "id": "sub_smart",
+    "label": "📊 Telemetria S.M.A.R.T.\nsmartctl SAT & Health",
+    "level": 4,
+    "group": "aux",
+    "color": {
+      "background": "#1e3a5f",
+      "border": "#38bdf8",
+      "highlight": {
+        "background": "#0369a1",
+        "border": "#7dd3fc"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "size": 12
+    },
+    "shape": "box",
+    "margin": 10,
+    "meta": {
+      "badge": "Disk Health Monitor",
+      "badgeClass": "tag-aux",
+      "title": "📊 Telemetria S.M.A.R.T. (smartctl)",
+      "privilege": "root (smartctl -j -d sat)",
+      "cmd": "query_smart_telemetry(target_dev)",
+      "desc": "Interroga temperatura, salute globale (PASSED), ore di attività e cicli di accensione. A disco spento, restituisce immediatamente 0W Standby senza tentare accessi che sveglierebbero le testine.",
+      "security": "Pass-through SAT standardizzato per controller Western Digital USB."
+    }
+  },
+  {
+    "id": "sub_watchdog",
+    "label": "⏱️ Idle Watchdog Thread\nMonitor I/O /sys/block",
+    "level": 4,
+    "group": "aux",
+    "color": {
+      "background": "#78350f",
+      "border": "#f59e0b",
+      "highlight": {
+        "background": "#92400e",
+        "border": "#fbbf24"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "size": 12
+    },
+    "shape": "box",
+    "margin": 10,
+    "meta": {
+      "badge": "Background Daemon Thread",
+      "badgeClass": "tag-stop",
+      "title": "⏱️ Idle Watchdog Subsystem",
+      "privilege": "Thread in background all'interno del demone",
+      "cmd": "Controllo /sys/block/<dev>/stat ogni 15s",
+      "desc": "Monitora costantemente il numero di settori letti e scritti a livello fisico. Se non viene registrata alcuna attività I/O per il periodo configurato (es. 30 minuti), innesca automaticamente il teardown sicuro.",
+      "security": "Zero falsi positivi: il controllo avviene direttamente sulle statistiche di blocco del kernel Linux."
+    }
+  },
+  {
+    "id": "sub_discord",
+    "label": "📢 Discord Notifier\nDispatcher Nativo Embeds",
+    "level": 4,
+    "group": "aux",
+    "color": {
+      "background": "#1e3a5f",
+      "border": "#38bdf8",
+      "highlight": {
+        "background": "#0369a1",
+        "border": "#7dd3fc"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "size": 12
+    },
+    "shape": "box",
+    "margin": 10,
+    "meta": {
+      "badge": "Notification Dispatcher",
+      "badgeClass": "tag-aux",
+      "title": "📢 Notifier Webhook Discord Nativo",
+      "privilege": "Standard Library urllib.request (Zero Subprocess)",
+      "cmd": "send_discord_notification(config, event, msg)",
+      "desc": "Invia notifiche rich embed con codici colore, host, volume group, punto di mount e stato 0W. Se Discord restituisce un errore HTTP, ne stampa il codice e il messaggio esatto su stderr.",
+      "security": "Trasparenza totale: nessun fallback silenzioso, nessun dato sensibile o chiave trasmesso."
+    }
+  },
+  {
+    "id": "start_f1",
+    "label": "[1/7] ⚡ Accensione Presa 220V\nHA switch/turn_on & Poll State",
+    "level": 5,
+    "group": "start",
+    "color": {
+      "background": "#064e3b",
+      "border": "#10b981",
+      "highlight": {
+        "background": "#065f46",
+        "border": "#34d399"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "size": 12
+    },
+    "shape": "box",
+    "margin": 10,
+    "meta": {
+      "badge": "Fase 1: Power ON",
+      "badgeClass": "tag-start",
+      "title": "[1/7] Accensione Presa Home Assistant",
+      "privilege": "Home Assistant REST API",
+      "cmd": "POST /api/services/switch/turn_on",
+      "desc": "Invia il comando di alimentazione alla presa smart e attende la conferma di stato ON prima di procedere.",
+      "security": "Se la presa non conferma lo stato entro il timeout configurato, la sequenza abortisce."
+    }
+  },
+  {
+    "id": "start_f2",
+    "label": "[2/7] 🔍 Rilevamento Hardware\nEnumerazione USB & LVM PV",
+    "level": 6,
+    "group": "start",
+    "color": {
+      "background": "#064e3b",
+      "border": "#10b981",
+      "highlight": {
+        "background": "#065f46",
+        "border": "#34d399"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "size": 12
+    },
+    "shape": "box",
+    "margin": 10,
+    "meta": {
+      "badge": "Fase 2: Hardware Discovery",
+      "badgeClass": "tag-start",
+      "title": "[2/7] Rilevamento Disco USB",
+      "privilege": "Kernel udev & LVM pvs",
+      "cmd": "pvs --noheadings -o pv_name,vg_name",
+      "desc": "Attende l'enumerazione del controller USB sul bus e identifica il disco fisico tramite il Physical Volume di LVM.",
+      "security": "Esclude euristica sui nomi /dev/sdX, garantendo che i dischi di sistema OS non vengano mai toccati."
+    }
+  },
+  {
+    "id": "start_f3",
+    "label": "[3/7] 📦 Attivazione LVM\nvgscan & vgchange -ay",
+    "level": 7,
+    "group": "start",
+    "color": {
+      "background": "#064e3b",
+      "border": "#10b981",
+      "highlight": {
+        "background": "#065f46",
+        "border": "#34d399"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "size": 12
+    },
+    "shape": "box",
+    "margin": 10,
+    "meta": {
+      "badge": "Fase 3: LVM Activation",
+      "badgeClass": "tag-start",
+      "title": "[3/7] Attivazione Volume Group LVM",
+      "privilege": "root (LVM2 Engine)",
+      "cmd": "vgscan --mknodes && vgchange -ay <vg_name>",
+      "desc": "Scansiona e attiva il volume group configurato (es. vg_storage), esponendo i nodi /dev/<vg>/<lv>.",
+      "security": "In caso di fallimento o volumi mancanti, la procedura innesca il rollback di teardown."
+    }
+  },
+  {
+    "id": "start_f4",
+    "label": "[4/7] 🔓 Sblocco LUKS2 in RAM\nArgon2id Decryption (Key Wipe)",
+    "level": 8,
+    "group": "start",
+    "color": {
+      "background": "#064e3b",
+      "border": "#10b981",
+      "highlight": {
+        "background": "#065f46",
+        "border": "#34d399"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "bold": true,
+      "size": 13
+    },
+    "shape": "box",
+    "margin": 12,
+    "meta": {
+      "badge": "Fase 4: LUKS Decryption",
+      "badgeClass": "tag-start",
+      "title": "[4/7] Decifratura LUKS2 in Memoria RAM",
+      "privilege": "root (cryptsetup & dm-crypt)",
+      "cmd": "cryptsetup open /dev/<vg>/<lv> cryptovault --type luks2",
+      "desc": "Decifra l'header LUKS2 via Argon2id. La master key viene allocata nei soli registri kernel di RAM. I dati di input della passphrase vengono azzerati immediatamente.",
+      "security": "Zero persistenza su storage: nessuna traccia della chiave viene scritta su disco o file temporanei."
+    }
+  },
+  {
+    "id": "start_f5",
+    "label": "[5/7] 📁 Montaggio Filesystem\next4 Mount Point & Permessi SGID",
+    "level": 9,
+    "group": "start",
+    "color": {
+      "background": "#064e3b",
+      "border": "#10b981",
+      "highlight": {
+        "background": "#065f46",
+        "border": "#34d399"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "size": 12
+    },
+    "shape": "box",
+    "margin": 10,
+    "meta": {
+      "badge": "Fase 5: Mount Storage",
+      "badgeClass": "tag-start",
+      "title": "[5/7] Montaggio Filesystem ext4",
+      "privilege": "root (mount, chown, chmod)",
+      "cmd": "mount /dev/mapper/secure_vault /srv/storage/secure_vault",
+      "desc": "Monta il volume cifrato su /srv/storage/secure_vault e l'eventuale volume di backup su /srv/storage/backup_vault con bit SGID 2775.",
+      "security": "Verifica atomica dello stato montato per garantire disponibilità immediata del filesystem."
+    }
+  },
+  {
+    "id": "start_f6",
+    "label": "[6/7] 🌐 Avvio Servizi Rete\nsystemctl restart webdav",
+    "level": 10,
+    "group": "start",
+    "color": {
+      "background": "#064e3b",
+      "border": "#10b981",
+      "highlight": {
+        "background": "#065f46",
+        "border": "#34d399"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "size": 12
+    },
+    "shape": "box",
+    "margin": 10,
+    "meta": {
+      "badge": "Fase 6: Avvio Servizi",
+      "badgeClass": "tag-start",
+      "title": "[6/7] Avvio Condivisione File WebDAV",
+      "privilege": "systemd service manager",
+      "cmd": "systemctl restart webdav.service",
+      "desc": "Se WebDAV è abilitato, riavvia il servizio esponendo lo storage cifrato per i client in rete locale.",
+      "security": "WebDAV gira in sandbox con utente dedicato e autenticazione Digest protetta."
+    }
+  },
+  {
+    "id": "start_f7",
+    "label": "[7/7] ✅ Storage Operativo (Ready)\nWatchdog Attivo & Discord Notify",
+    "level": 11,
+    "group": "start",
+    "color": {
+      "background": "#047857",
+      "border": "#34d399",
+      "highlight": {
+        "background": "#059669",
+        "border": "#6ee7b7"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "bold": true,
+      "size": 14
+    },
+    "shape": "box",
+    "margin": 14,
+    "meta": {
+      "badge": "Fase 7: Regime Operativo",
+      "badgeClass": "tag-start",
+      "title": "[7/7] Storage Pronto & Watchdog Armato",
+      "privilege": "Sistema a Regime",
+      "cmd": "IdleWatchdog.start() + notify_discord(\"unlock\")",
+      "desc": "Tutte le fasi di sblocco sono completate. Viene avviato il thread di monitoraggio I/O del disco e spedita la notifica verde di successo a Discord.",
+      "security": "In caso di anomalie durante l'uso, il watchdog o l'operatore possono avviare l'arresto sicuro in qualunque momento."
+    }
+  },
+  {
+    "id": "stop_f1",
+    "label": "[1/8] 🎯 Identificazione Target\nMemorizza /dev/sdX e /sys/block",
+    "level": 5,
+    "group": "stop",
+    "color": {
+      "background": "#7c2d12",
+      "border": "#f97316",
+      "highlight": {
+        "background": "#9a3412",
+        "border": "#fdba74"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "size": 12
+    },
+    "shape": "box",
+    "margin": 10,
+    "meta": {
+      "badge": "Passo 1: Target Resolution",
+      "badgeClass": "tag-stop",
+      "title": "[1/8] Risoluzione Sicura Device Fisico",
+      "privilege": "root (sysfs resolution)",
+      "cmd": "find_target_block_device()",
+      "desc": "Memorizza con certezza assoluta il device /dev/sdX prima di smontare il filesystem, evitando che successive operazioni a mapper chiuso perdano il riferimento all'hardware.",
+      "security": "Protezione integrata: se il disco fisico coincide con il disco di root dell'OS, il comando SCSI viene categoricamente abortito."
+    }
+  },
+  {
+    "id": "stop_f2",
+    "label": "[2/8] 🛑 Chiusura Servizi Rete\nsystemctl stop webdav",
+    "level": 6,
+    "group": "stop",
+    "color": {
+      "background": "#7c2d12",
+      "border": "#f97316",
+      "highlight": {
+        "background": "#9a3412",
+        "border": "#fdba74"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "size": 12
+    },
+    "shape": "box",
+    "margin": 10,
+    "meta": {
+      "badge": "Passo 2: Stop Servizi",
+      "badgeClass": "tag-stop",
+      "title": "[2/8] Arresto Server WebDAV",
+      "privilege": "systemd service manager",
+      "cmd": "systemctl stop webdav.service",
+      "desc": "Arresta il demone WebDAV per troncare le connessioni attive dei client ed evitare che nuovi file vengano aperti.",
+      "security": "Previene scritture concorrenti e race conditions durante lo smontaggio."
+    }
+  },
+  {
+    "id": "stop_f3",
+    "label": "[3/8] 💾 Flush Cache RAM su Disco\nsync (Dirty Pages -> Platter)",
+    "level": 7,
+    "group": "stop",
+    "color": {
+      "background": "#7c2d12",
+      "border": "#f97316",
+      "highlight": {
+        "background": "#9a3412",
+        "border": "#fdba74"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "size": 12
+    },
+    "shape": "box",
+    "margin": 10,
+    "meta": {
+      "badge": "Passo 3: Memory Flush",
+      "badgeClass": "tag-stop",
+      "title": "[3/8] Flush Sincrono della Cache di Pagina",
+      "privilege": "Kernel syscall sync()",
+      "cmd": "sync",
+      "desc": "Svuota forzatamente tutti i buffer di scrittura pendenti nella memoria RAM del kernel direttamente sui piatti magnetici del disco.",
+      "security": "Garantisce zero perdita dati e integrità del filesystem prima dello smontaggio."
+    }
+  },
+  {
+    "id": "stop_f4",
+    "label": "[4/8] ⏏️ Smontaggio Filesystem\nfuser -km -9 & umount",
+    "level": 8,
+    "group": "stop",
+    "color": {
+      "background": "#7c2d12",
+      "border": "#f97316",
+      "highlight": {
+        "background": "#9a3412",
+        "border": "#fdba74"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "size": 12
+    },
+    "shape": "box",
+    "margin": 10,
+    "meta": {
+      "badge": "Passo 4: Unmount Pulito",
+      "badgeClass": "tag-stop",
+      "title": "[4/8] Smontaggio Filesystem (fuser & umount)",
+      "privilege": "root (fuser, umount)",
+      "cmd": "fuser -km -9 <mountpoint> && umount <mountpoint>",
+      "desc": "Invia SIGKILL ai processi residui con file aperti sul mountpoint e smonta tutti i volumi. Se il volume risulta occupato, applica automaticamente umount -l (lazy) come salvaguardia.",
+      "security": "Operazione totalmente idempotente: safe contro doppi smontaggi."
+    }
+  },
+  {
+    "id": "stop_f5",
+    "label": "[5/8] 🔒 Distruzione Master Key\ncryptsetup close cryptovault",
+    "level": 9,
+    "group": "stop",
+    "color": {
+      "background": "#7c2d12",
+      "border": "#f97316",
+      "highlight": {
+        "background": "#9a3412",
+        "border": "#fdba74"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "bold": true,
+      "size": 13
+    },
+    "shape": "box",
+    "margin": 12,
+    "meta": {
+      "badge": "Passo 5: Sigillo Cifrato",
+      "badgeClass": "tag-stop",
+      "title": "[5/8] Chiusura LUKS & Distruzione Chiavi RAM",
+      "privilege": "root (dm-crypt & cryptsetup)",
+      "cmd": "cryptsetup close cryptovault",
+      "desc": "Chiude il mapper virtuale /dev/mapper/cryptovault e distrugge irrevocabilmente dalla memoria kernel la chiave di decifratura.",
+      "security": "Protezione assoluta da cold-boot attack e memory dump forensi."
+    }
+  },
+  {
+    "id": "stop_f6",
+    "label": "[6/8] 📦 Disattivazione LVM\nvgchange -an <vg_name>",
+    "level": 10,
+    "group": "stop",
+    "color": {
+      "background": "#7c2d12",
+      "border": "#f97316",
+      "highlight": {
+        "background": "#9a3412",
+        "border": "#fdba74"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "size": 12
+    },
+    "shape": "box",
+    "margin": 10,
+    "meta": {
+      "badge": "Passo 6: Deattivazione LVM",
+      "badgeClass": "tag-stop",
+      "title": "[6/8] Disattivazione Volume Group LVM",
+      "privilege": "root (LVM2 Engine)",
+      "cmd": "vgchange -an <vg_name>",
+      "desc": "Disattiva il Volume Group vg_storage e tutti i volumi logici associati, chiudendo i descrittori di blocco aperti sul Physical Volume.",
+      "security": "Rilascia il disco da qualsiasi hook attivo del sottosistema LVM."
+    }
+  },
+  {
+    "id": "stop_f7",
+    "label": "[7/8] 💤 SCSI STOP UNIT & Ramp Park\nudisksctl power-off -b /dev/sdX",
+    "level": 11,
+    "group": "stop",
+    "color": {
+      "background": "#7c2d12",
+      "border": "#f97316",
+      "highlight": {
+        "background": "#9a3412",
+        "border": "#fdba74"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "bold": true,
+      "size": 13
+    },
+    "shape": "box",
+    "margin": 12,
+    "meta": {
+      "badge": "Passo 7: Parcheggio Meccanico",
+      "badgeClass": "tag-stop",
+      "title": "[7/8] SCSI STOP UNIT & Parcheggio Testine",
+      "privilege": "root (udisksctl / SCSI kernel)",
+      "cmd": "udisksctl power-off -b /dev/sdX",
+      "desc": "Invia il comando standard SCSI START STOP UNIT al bridge USB/SATA del Western Digital My Book. Il motore frena, le testine vengono adagiate sulla rampa esterna e il disco si de-enumera da /sys/block/.",
+      "security": "Evita urti o atterraggi bruschi delle testine sui piatti (Emergency Retract)."
+    }
+  },
+  {
+    "id": "stop_f8",
+    "label": "[8/8] 🔌 Taglio Corrente 220V (0W)\nHome Assistant turn_off & Discord",
+    "level": 12,
+    "group": "stop",
+    "color": {
+      "background": "#991b1b",
+      "border": "#ef4444",
+      "highlight": {
+        "background": "#b91c1c",
+        "border": "#fca5a5"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "bold": true,
+      "size": 13
+    },
+    "shape": "box",
+    "margin": 12,
+    "meta": {
+      "badge": "Passo 8: Zero Watt Cutoff",
+      "badgeClass": "tag-root",
+      "title": "[8/8] Interruzione Fisica Alimentazione 220V",
+      "privilege": "Home Assistant REST API",
+      "cmd": "POST /api/services/switch/turn_off (dopo 5s di grace)",
+      "desc": "Attende 5 secondi di tolleranza per garantire l'arresto inerziale completo, quindi apre il relè della presa smart via Home Assistant ed invia la notifica Discord di avvenuto lock.",
+      "security": "Consumo reale: 0.0 Watt. Nessun dato esposto, massima vita utile dell'hardware."
+    }
+  },
+  {
+    "id": "stop_done",
+    "label": "🔴 STANDBY 0 WATT (IDLE)\nStorage Sigillato & Disco Inerte",
+    "level": 13,
+    "group": "stop",
+    "color": {
+      "background": "#450a0a",
+      "border": "#ef4444",
+      "highlight": {
+        "background": "#7f1d1d",
+        "border": "#f87171"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "bold": true,
+      "size": 14
+    },
+    "shape": "box",
+    "margin": 14,
+    "meta": {
+      "badge": "Stato di Sicurezza Finale",
+      "badgeClass": "tag-root",
+      "title": "🔴 Standby Freddo a 0 Watt",
+      "privilege": "Nessun Processo Attivo",
+      "cmd": "Disco Spento, Relè Aperto, 0 Watt",
+      "desc": "Il disco è spento e completamente inerte. I filesystem sono sigillati e smontati. Il sistema attende un nuovo trigger di sblocco.",
+      "security": "Massima sicurezza crittografica e fisica."
+    }
+  },
+  {
+    "id": "err_rollback",
+    "label": "⚠️ Errore o Passphrase Errata\nRollback Atomico -> safe_teardown()",
+    "level": 8,
+    "group": "error",
+    "color": {
+      "background": "#450a0a",
+      "border": "#ef4444",
+      "highlight": {
+        "background": "#7f1d1d",
+        "border": "#f87171"
+      }
+    },
+    "font": {
+      "color": "#ffffff",
+      "bold": true,
+      "size": 12
+    },
+    "shape": "box",
+    "margin": 12,
+    "meta": {
+      "badge": "Gestione Eccezioni",
+      "badgeClass": "tag-root",
+      "title": "⚠️ Rollback Atomico da Fallimento Sblocco",
+      "privilege": "StorageEngineError Handler",
+      "cmd": "notify_discord(\"error\") -> safe_teardown(notify_event=\"\")",
+      "desc": "Se qualsiasi fase di sblocco fallisce (errore hardware, LVM o passphrase LUKS errata), il motore notifica l'errore su Discord e rollbacka istantaneamente invocando il teardown sicuro.",
+      "security": "Garantisce che il disco non rimanga mai alimentato a vuoto o sbloccato a metà."
+    }
+  }
+];
+    const allEdgesData = [
+  {
+    "from": "client_ui",
+    "to": "web_gateway",
+    "label": "HTTP :9099"
+  },
+  {
+    "from": "client_ui",
+    "to": "daemon_master",
+    "label": "CLI root"
+  },
+  {
+    "from": "web_gateway",
+    "to": "ipc_socket",
+    "label": "NDJSON Stream"
+  },
+  {
+    "from": "ipc_socket",
+    "to": "daemon_master",
+    "label": "0660 Unix Socket"
+  },
+  {
+    "from": "daemon_master",
+    "to": "config_vault",
+    "label": "Legge .env (600)"
+  },
+  {
+    "from": "daemon_master",
+    "to": "sub_ha",
+    "label": "Power Control"
+  },
+  {
+    "from": "daemon_master",
+    "to": "sub_smart",
+    "label": "Health / SAT"
+  },
+  {
+    "from": "daemon_master",
+    "to": "sub_watchdog",
+    "label": "I/O Monitor"
+  },
+  {
+    "from": "daemon_master",
+    "to": "sub_discord",
+    "label": "Rich Embeds"
+  },
+  {
+    "from": "daemon_master",
+    "to": "start_f1",
+    "label": "Cmd: start"
+  },
+  {
+    "from": "start_f1",
+    "to": "start_f2",
+    "label": "Presa ON"
+  },
+  {
+    "from": "start_f2",
+    "to": "start_f3",
+    "label": "Disco Enumerato"
+  },
+  {
+    "from": "start_f3",
+    "to": "start_f4",
+    "label": "VG Attivato"
+  },
+  {
+    "from": "start_f4",
+    "to": "start_f5",
+    "label": "Decifrato in RAM"
+  },
+  {
+    "from": "start_f5",
+    "to": "start_f6",
+    "label": "Mounted /srv/storage"
+  },
+  {
+    "from": "start_f6",
+    "to": "start_f7",
+    "label": "WebDAV Pronto"
+  },
+  {
+    "from": "start_f7",
+    "to": "sub_watchdog",
+    "label": "Watchdog Armato"
+  },
+  {
+    "from": "start_f7",
+    "to": "sub_discord",
+    "label": "Notifica Unlock"
+  },
+  {
+    "from": "start_f1",
+    "to": "err_rollback",
+    "label": "Timeout Presa",
+    "dashes": true,
+    "color": "#ef4444"
+  },
+  {
+    "from": "start_f2",
+    "to": "err_rollback",
+    "label": "Disco Assente",
+    "dashes": true,
+    "color": "#ef4444"
+  },
+  {
+    "from": "start_f4",
+    "to": "err_rollback",
+    "label": "Passphrase KO",
+    "dashes": true,
+    "color": "#ef4444"
+  },
+  {
+    "from": "err_rollback",
+    "to": "stop_f1",
+    "label": "Esegue Teardown",
+    "dashes": true,
+    "color": "#ef4444"
+  },
+  {
+    "from": "daemon_master",
+    "to": "stop_f1",
+    "label": "Cmd: stop"
+  },
+  {
+    "from": "sub_watchdog",
+    "to": "stop_f1",
+    "label": "Timeout Inattività",
+    "dashes": true,
+    "color": "#f59e0b"
+  },
+  {
+    "from": "stop_f1",
+    "to": "stop_f2",
+    "label": "Device Risolto"
+  },
+  {
+    "from": "stop_f2",
+    "to": "stop_f3",
+    "label": "WebDAV Spento"
+  },
+  {
+    "from": "stop_f3",
+    "to": "stop_f4",
+    "label": "RAM Svuotata"
+  },
+  {
+    "from": "stop_f4",
+    "to": "stop_f5",
+    "label": "Filesystem Smontati"
+  },
+  {
+    "from": "stop_f5",
+    "to": "stop_f6",
+    "label": "Chiavi Distrutte"
+  },
+  {
+    "from": "stop_f6",
+    "to": "stop_f7",
+    "label": "LVM Disattivato"
+  },
+  {
+    "from": "stop_f7",
+    "to": "stop_f8",
+    "label": "Testine Parcheggiate"
+  },
+  {
+    "from": "stop_f8",
+    "to": "stop_done",
+    "label": "220V Staccata (0W)"
+  },
+  {
+    "from": "stop_f8",
+    "to": "sub_discord",
+    "label": "Notifica Lock"
+  }
+];
+
+    let network = null;
+    const container = document.getElementById('network');
+
+    function createNetwork(nodesData, edgesData) {
+      const data = {
+        nodes: new vis.DataSet(nodesData),
+        edges: new vis.DataSet(edgesData)
+      };
+
+      const options = {
+        layout: {
+          hierarchical: {
+            direction: 'UD',
+            sortMethod: 'directed',
+            nodeSpacing: 220,
+            levelSeparation: 140
+          }
+        },
+        physics: {
+          hierarchicalRepulsion: {
+            nodeDistance: 240
+          }
+        },
+        edges: {
+          arrows: { to: { enabled: true, scaleFactor: 0.85 } },
+          color: { color: '#475569', highlight: '#38bdf8' },
+          font: { color: '#94a3b8', size: 11, face: 'Segoe UI', align: 'horizontal', background: '#090d16' },
+          smooth: { type: 'cubicBezier', forceDirection: 'vertical', roundness: 0.35 }
+        },
+        interaction: {
+          hover: true,
+          navigationButtons: false,
+          keyboard: true
+        }
+      };
+
+      network = new vis.Network(container, data, options);
+
+      network.on('click', function(params) {
+        if (params.nodes.length > 0) {
+          const nodeId = params.nodes[0];
+          const node = allNodesData.find(n => n.id === nodeId);
+          if (node && node.meta) {
+            openSidebar(node.meta);
+          }
+        } else {
+          closeSidebar();
+        }
+      });
+    }
+
+    function openSidebar(meta) {
+      document.getElementById('sideBadge').textContent = meta.badge || 'Dettaglio';
+      document.getElementById('sideBadge').className = 'tag-badge ' + (meta.badgeClass || 'tag-aux');
+      document.getElementById('sideTitle').textContent = meta.title || 'Componente';
+      document.getElementById('sidePrivilege').textContent = meta.privilege || 'N/D';
+      document.getElementById('sideCmd').textContent = meta.cmd || 'N/D';
+      document.getElementById('sideDesc').textContent = meta.desc || 'N/D';
+      document.getElementById('sideSecurity').textContent = meta.security || 'N/D';
+      document.getElementById('sidebar').classList.add('open');
+    }
+
+    function closeSidebar() {
+      document.getElementById('sidebar').classList.remove('open');
+    }
+
+    function zoomIn() {
+      if (network) network.moveTo({ scale: network.getScale() * 1.3, animation: { duration: 300 } });
+    }
+
+    function zoomOut() {
+      if (network) network.moveTo({ scale: network.getScale() * 0.7, animation: { duration: 300 } });
+    }
+
+    function setFilter(btn, filterType) {
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+
+      closeSidebar();
+
+      if (filterType === 'all') {
+        createNetwork(allNodesData, allEdgesData);
+        setTimeout(() => network.fit({ animation: { duration: 500 } }), 100);
+        return;
+      }
+
+      let targetGroups = [];
+      if (filterType === 'start') {
+        targetGroups = ['client', 'unprivileged', 'ipc', 'root_daemon', 'start', 'aux'];
+      } else if (filterType === 'stop') {
+        targetGroups = ['client', 'unprivileged', 'ipc', 'root_daemon', 'stop', 'aux'];
+      } else if (filterType === 'security') {
+        targetGroups = ['client', 'unprivileged', 'ipc', 'root_daemon', 'security'];
+      } else if (filterType === 'aux') {
+        targetGroups = ['root_daemon', 'aux'];
+      }
+
+      const filteredNodes = allNodesData.filter(n => targetGroups.includes(n.group));
+      const nodeIds = filteredNodes.map(n => n.id);
+      const filteredEdges = allEdgesData.filter(e => nodeIds.includes(e.from) && nodeIds.includes(e.to));
+
+      createNetwork(filteredNodes, filteredEdges);
+      setTimeout(() => network.fit({ animation: { duration: 500 } }), 100);
+    }
+
+    function searchNode(query) {
+      if (!query || !query.trim()) {
+        network.fit({ animation: { duration: 300 } });
+        return;
+      }
+      const q = query.toLowerCase().trim();
+      const match = allNodesData.find(n => 
+        n.label.toLowerCase().includes(q) || 
+        (n.meta && (n.meta.title.toLowerCase().includes(q) || n.meta.cmd.toLowerCase().includes(q) || n.meta.desc.toLowerCase().includes(q)))
+      );
+      if (match && network) {
+        network.focus(match.id, { scale: 1.25, animation: { duration: 400 } });
+        openSidebar(match.meta);
+      }
+    }
+
+    function loadScript(url) {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.type = 'text/javascript';
+        script.src = url;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error('Failed to load ' + url));
+        document.head.appendChild(script);
+      });
+    }
+
+    async function ensureVisLoaded() {
+      if (typeof vis !== 'undefined' && vis.Network) return true;
+      const cdnList = [
+        'vis-network.min.js',
+        'https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.9/dist/vis-network.min.js',
+        'https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js',
+        'https://unpkg.com/vis-network/standalone/umd/vis-network.min.js'
+      ];
+      for (const src of cdnList) {
+        try {
+          await loadScript(src);
+          if (typeof vis !== 'undefined' && vis.Network) return true;
+        } catch (e) {
+          console.warn('vis-network source failed, trying next:', src);
+        }
+      }
+      return false;
+    }
+
+    // Inizializzazione sicura al caricamento con failover CDN
+    async function init() {
+      const ok = await ensureVisLoaded();
+      if (!ok || typeof vis === 'undefined' || !vis.Network) {
+        document.getElementById('network').innerHTML = '<div style="display:flex; height:100%; align-items:center; justify-content:center; flex-direction:column; gap:1rem; color:#ef4444; font-size:1.1rem; text-align:center; padding:2rem;"><div>⚠️ Impossibile caricare la libreria vis-network (locale, Cloudflare, jsDelivr o unpkg).</div><div style="font-size:0.9rem; color:#94a3b8; max-width:600px;">Verificare la connessione Internet o verificare che le estensioni ad-block del browser consentano il caricamento degli script per questa anteprima.</div></div>';
+        return;
+      }
+      createNetwork(allNodesData, allEdgesData);
+      setTimeout(() => {
+        if (network) network.fit({ animation: { duration: 600 } });
+      }, 150);
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }

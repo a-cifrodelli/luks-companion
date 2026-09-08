@@ -39,8 +39,8 @@ flowchart LR
 > [!TIP]
 > ### 🗺️ Lifecycle Flowchart
 > To inspect the complete state-machine diagram, including Home Assistant caching, USB polling, RAM decryption, and atomic teardown:
-> * 🌐 **Live Web Preview**: <a href="https://htmlpreview.github.io/?https://github.com/a-cifrodelli/luks-companion/blob/main/docs/luks_manager_flowchart.html" target="_blank">**Open Flowchart on htmlpreview.github.io**</a>
-> * 💻 **Local File**: Open <a href="luks_manager_flowchart.html" target="_blank">`docs/luks_manager_flowchart.html`</a> in your browser.
+> * 🌐 **Live Web Preview**: <a href="https://htmlpreview.github.io/?https://github.com/a-cifrodelli/luks-companion/blob/main/docs/flowchart/index.html" target="_blank">**Open Flowchart on htmlpreview.github.io**</a>
+> * 💻 **Local File**: Open <a href="flowchart/index.html" target="_blank">`docs/flowchart/index.html`</a> in your browser.
 
 ---
 
