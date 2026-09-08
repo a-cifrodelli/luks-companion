@@ -48,7 +48,7 @@ flowchart TD
         subgraph SEC ["Security & Storage Layer"]
             LVM["LVM2 Module (vgchange -ay)"]
             LUKS["LUKS2 / dm-crypt (Argon2id in RAM)"]
-            Mounts["Unified Storage Base (/srv/storage/crypto_data)"]
+            Mounts["Unified Storage Base (/srv/storage/secure_vault)"]
             WebDAV["WebDAV Server (:9088 CRUD)"]
         end
         

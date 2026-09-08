@@ -308,7 +308,174 @@ function applyStatusData(data) {
     }
 }
 
+// -------------------------------------------------------------------
+// MOCK / DEMO DATASET FOR DOCUMENTATION SCREENSHOTS (?mock=1 / ?demo=1)
+// -------------------------------------------------------------------
+const urlParams = new URLSearchParams(window.location.search);
+const isMockMode = (typeof window !== 'undefined' && Boolean(window.IS_MOCK_SERVER)) || urlParams.has("mock") || urlParams.has("demo") || window.location.pathname.includes("demo");
+let currentMockState = (urlParams.get("mock") === "standby" || urlParams.get("demo") === "standby") ? "standby" : "mounted";
+
+const MOCK_DATA_MOUNTED = {
+    status: "mounted",
+    unlocked: true,
+    mounted: true,
+    vg_active: true,
+    plug_state: "on",
+    plug_powered: true,
+    disk_present: true,
+    target_dev: "/dev/sdb",
+    webdav_active: true,
+    webdav_port: 9088,
+    vg_name: "vg_storage",
+    mapper_name: "secure_vault",
+    mount_crypto: "/srv/storage/secure_vault",
+    mount_backup: "/srv/storage/backup_vault",
+    volumes: [
+        {
+            name: "Volume Dati (secure_vault)",
+            mountpoint: "/srv/storage/secure_vault",
+            total_bytes: 1968840245248,
+            used_bytes: 247839211520,
+            free_bytes: 1721001033728,
+            used_percent: 12.6,
+            total_human: "1.8 TB",
+            used_human: "230.8 GB",
+            free_human: "1.6 TB"
+        },
+        {
+            name: "Volume Backup (backup_vault)",
+            mountpoint: "/srv/storage/backup_vault",
+            total_bytes: 984420122624,
+            used_bytes: 413456451502,
+            free_bytes: 570963671122,
+            used_percent: 42.0,
+            total_human: "916.8 GB",
+            used_human: "385.1 GB",
+            free_human: "531.7 GB"
+        }
+    ],
+    smart: {
+        supported: true,
+        installed: true,
+        device: "/dev/sdb",
+        health: "PASSED",
+        temperature_c: 36,
+        model: "Generic External Disk (USB 3.0)",
+        serial: "SN-DEMO-98765432"
+    }
+};
+
+const MOCK_DATA_STANDBY = {
+    status: "stopped",
+    unlocked: false,
+    mounted: false,
+    vg_active: false,
+    plug_state: "off",
+    plug_powered: false,
+    disk_present: false,
+    target_dev: null,
+    webdav_active: false,
+    webdav_port: 9088,
+    vg_name: "vg_storage",
+    mapper_name: "secure_vault",
+    mount_crypto: "/srv/storage/secure_vault",
+    mount_backup: "/srv/storage/backup_vault",
+    volumes: [],
+    smart: {
+        supported: false,
+        installed: true,
+        device: null,
+        reason: "Disco spento / inerte (0W Standby)"
+    }
+};
+
+function setMockState(state) {
+    currentMockState = state;
+    const data = (state === "mounted") ? MOCK_DATA_MOUNTED : MOCK_DATA_STANDBY;
+    applyStatusData(data);
+
+    const unlockBtn = document.getElementById("btnUnlock");
+    const stopBtn = document.getElementById("btnStop");
+    const consoleEl = document.getElementById("consoleOutput");
+
+    const btnMnt = document.getElementById("mockBtnMounted");
+    const btnStb = document.getElementById("mockBtnStandby");
+    if (btnMnt && btnStb) {
+        btnMnt.style.background = (state === "mounted") ? "rgba(16, 185, 129, 0.25)" : "transparent";
+        btnStb.style.background = (state === "standby") ? "rgba(239, 68, 68, 0.25)" : "transparent";
+    }
+
+    if (state === "mounted") {
+        if (unlockBtn) {
+            unlockBtn.disabled = true;
+            unlockBtn.textContent = "🔑 Sblocca Storage";
+        }
+        if (stopBtn) {
+            stopBtn.disabled = false;
+            stopBtn.textContent = "🛑 Espelli & Spegni 220V";
+        }
+        if (consoleEl) {
+            consoleEl.textContent = 
+`[01:06:20] LUKS Companion Dashboard inizializzata. In attesa di comandi.
+[01:06:21] Invio richiesta di sblocco tramite Passphrase...
+[01:06:21] [*] Avvio sequenza di sblocco e montaggio storage...
+[01:06:22]   [1/7] Accensione presa Home Assistant (switch.smart_plug_storage)...
+[01:06:24]   [2/7] Rilevamento bus USB Linux (device /dev/sdb pronto)...
+[01:06:25]   [3/7] Attivazione Volume Group LVM (vg_storage)...
+[01:06:26]   [4/7] Sblocco crittografico LUKS2 in RAM (/dev/mapper/secure_vault)...
+[01:06:27]   [5/7] Montaggio filesystem ext4 (/srv/storage/secure_vault)...
+[01:06:28]   [6/7] Avvio servizio WebDAV hacdias/webdav (Porta 9088)...
+[01:06:29]   [7/7] Telemetria S.M.A.R.T.: Integro PASSED (36°C) - Generic External Disk (USB 3.0)
+[01:06:29] [✓] STORAGE SBLOCCATO E OPERATIVO CON SUCCESSO!
+`;
+        }
+    } else {
+        if (unlockBtn) {
+            unlockBtn.disabled = false;
+            unlockBtn.textContent = "🔑 Sblocca Storage";
+        }
+        if (stopBtn) {
+            stopBtn.disabled = true;
+            stopBtn.textContent = "🛑 Espelli & Spegni 220V";
+        }
+        if (consoleEl) {
+            consoleEl.textContent = 
+`[01:15:00] Avvio sequenza di teardown e spegnimento sicuro...
+[01:15:01]   [1/8] Arresto servizio WebDAV...
+[01:15:02]   [2/8] Flush buffer RAM (sync) e smontaggio filesystem...
+[01:15:03]   [3/8] Chiusura container LUKS2 e cancellazione chiavi dalla RAM...
+[01:15:04]   [4/8] Disattivazione Volume Group LVM (vg_storage)...
+[01:15:05]   [5/8] Invio comando SCSI STOP UNIT (udisksctl power-off)...
+[01:15:07]   [6/8] Parcheggio testine su rampa di atterraggio confermato.
+[01:15:08]   [7/8] Dis-enumerazione bus USB Linux completata (/dev/sdb rimosso).
+[01:15:09]   [8/8] Cutoff 220V Home Assistant (switch.smart_plug_storage)...
+[01:15:10] [✓] STORAGE SPENTO IN SICUREZZA (0W STANDBY).
+`;
+        }
+    }
+}
+
+function injectMockSwitcher() {
+    let headerActions = document.querySelector(".header-actions");
+    if (!headerActions || document.getElementById("mockSwitcher")) return;
+
+    let switcher = document.createElement("div");
+    switcher.id = "mockSwitcher";
+    switcher.style.cssText = "display:flex; align-items:center; gap:0.4rem; background:rgba(30, 41, 59, 0.85); padding:0.25rem 0.5rem; border-radius:6px; border:1px solid #38bdf8;";
+    switcher.innerHTML = `
+        <span style="font-size:0.75rem; color:#38bdf8; font-weight:700; letter-spacing:0.04em;">DEMO MOCK:</span>
+        <button id="mockBtnMounted" class="btn btn-sm btn-outline" style="padding:0.2rem 0.6rem; font-size:0.75rem;" onclick="setMockState('mounted')">🟢 Sbloccato</button>
+        <button id="mockBtnStandby" class="btn btn-sm btn-outline" style="padding:0.2rem 0.6rem; font-size:0.75rem;" onclick="setMockState('standby')">⚪ Standby 0W</button>
+    `;
+    headerActions.insertBefore(switcher, headerActions.firstChild);
+}
+
 async function updateStatus() {
+    if (isMockMode) {
+        setMockState(currentMockState);
+        return;
+    }
+
     try {
         const res = await fetch("/api/status");
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -580,6 +747,12 @@ function bytesToBase64(bytes) {
 }
 
 async function performUnlock() {
+    if (isMockMode) {
+        showToast("Demo Mode", "Simulazione sblocco storage completata!", "success");
+        setMockState("mounted");
+        return;
+    }
+
     const unlockBtn = document.getElementById("btnUnlock");
     unlockBtn.disabled = true;
     unlockBtn.textContent = "⏳ Sblocco in corso...";
@@ -960,6 +1133,12 @@ function closeStopModal() {
 
 async function confirmStop() {
     closeStopModal();
+    if (isMockMode) {
+        showToast("Demo Mode", "Simulazione teardown e spegnimento 0W completata!", "success");
+        setMockState("standby");
+        return;
+    }
+
     const stopBtn = document.getElementById("btnStop");
     stopBtn.disabled = true;
     stopBtn.textContent = "⏳ Arresto in corso...";
@@ -1163,7 +1342,12 @@ async function performHeaderRestore() {
 // -------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
     setupAllDropzones();
-    updateStatus();
-    setInterval(updateStatus, 5000);
-    logConsole("LUKS Companion Dashboard inizializzata. In attesa di comandi.");
+    if (isMockMode) {
+        injectMockSwitcher();
+        setMockState(currentMockState);
+    } else {
+        updateStatus();
+        setInterval(updateStatus, 5000);
+        logConsole("LUKS Companion Dashboard inizializzata. In attesa di comandi.");
+    }
 });

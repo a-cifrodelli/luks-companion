@@ -165,3 +165,36 @@ def test_web_gateway_flowchart_route(tmp_path):
     assert "text/html" in headers_dict.get("Content-Type", "")
     assert b"Flowchart Test" in handler.wfile.getvalue()
 
+
+def test_web_gateway_mock_mode():
+    cfg = Config()
+    handler = WebGatewayHandler.__new__(WebGatewayHandler)
+    handler.config = cfg
+    handler.is_mock = True
+    handler.path = "/api/status"
+    handler.wfile = io.BytesIO()
+    handler.headers_sent = []
+    handler.response_code = None
+
+    def fake_send_response(code):
+        handler.response_code = code
+
+    def fake_send_header(key, val):
+        handler.headers_sent.append((key, val))
+
+    def fake_end_headers():
+        pass
+
+    handler.send_response = fake_send_response
+    handler.send_header = fake_send_header
+    handler.end_headers = fake_end_headers
+
+    handler.do_GET()
+
+    assert handler.response_code == 200
+    res_data = json.loads(handler.wfile.getvalue().decode("utf-8"))
+    assert res_data["status"] == "ok"
+    assert res_data["data"]["status"] == "mounted"
+    assert res_data["data"]["smart"]["health"] == "PASSED"
+
+

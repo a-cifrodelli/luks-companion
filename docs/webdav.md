@@ -152,8 +152,8 @@ In your `.env` file, set:
 ENABLE_WEBDAV=true
 WEBDAV_PORT=9088
 STORAGE_BASE="/srv/storage"
-MAPPER_NAME="crypto_data"
-LV_BACKUP="backup_data" # Optional secondary volume
+MAPPER_NAME="secure_vault"
+LV_BACKUP="backup_vault" # Optional secondary volume
 STORAGE_GROUP="storage"
 STORAGE_PERMS="2775"
 RELOAD_SAMBA=false
@@ -162,5 +162,5 @@ RELOAD_SAMBA=false
 ### Clean Permission & Multi-Volume Model (No `chmod 777`):
 1. The installer automatically creates a shared system group (`storage`) and adds your local user (`$SUDO_USER`) to it.
 2. The base directory (`/srv/storage`) and all dynamically calculated mount points (`${STORAGE_BASE}/${MAPPER_NAME}`, `${STORAGE_BASE}/${LV_BACKUP}`) are mounted directly and protected with `STORAGE_GROUP` ownership and the **SGID bit** (`chmod 2775`).
-3. WebDAV serves the unified storage root (`directory: "/srv/storage"`, `scope: "/"`), so all mounted volumes (`crypto_data/`, `backup_data/`, etc.) are immediately accessible and writable from the root URL.
+3. WebDAV serves the unified storage root (`directory: "/srv/storage"`, `scope: "/"`), so all mounted volumes (`secure_vault/`, `backup_vault/`, etc.) are immediately accessible and writable from the root URL.
 4. On teardown, the script cleanly stops `webdav.service` before unmounting filesystems and initiating physical drive spindown.

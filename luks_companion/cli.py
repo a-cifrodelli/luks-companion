@@ -69,6 +69,7 @@ def main():
     # WEB (Unprivileged service)
     p_web = subparsers.add_parser("web", help="Avvia il gateway web HTTP")
     p_web.add_argument("--drop-privileges", type=str, default="luks-web", help="Utente a cui cedere i privilegi di root")
+    p_web.add_argument("--mock", "--demo", action="store_true", help="Avvia il web gateway in modalità Mock/Demo con telemetria simulata per screenshot")
 
     # NOTIFY
     p_notify = subparsers.add_parser("notify", help="Invia una notifica via Webhook Discord (test, unlock, lock, watchdog, error)")
@@ -127,7 +128,7 @@ def main():
 
     # 4. WEB
     elif args.command == "web":
-        run_web_server(cfg, drop_privs_user=args.drop_privileges)
+        run_web_server(cfg, drop_privs_user=args.drop_privileges, mock=getattr(args, "mock", False))
 
     # 5. START / UNLOCK
     elif args.command in ("start", "unlock"):

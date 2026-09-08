@@ -143,11 +143,11 @@ class StorageEngine:
 
         volumes = []
         if is_mounted:
-            v_crypto = get_volume_stats(self.config.mount_crypto, "Dati Cifrati (crypto_data)", self.runner)
+            v_crypto = get_volume_stats(self.config.mount_crypto, f"Dati Cifrati ({self.config.lv_crypto})", self.runner)
             if v_crypto:
                 volumes.append(v_crypto)
             if self.config.mount_backup:
-                v_backup = get_volume_stats(self.config.mount_backup, "Backup (backup_data)", self.runner)
+                v_backup = get_volume_stats(self.config.mount_backup, f"Backup ({self.config.lv_backup})", self.runner)
                 if v_backup:
                     volumes.append(v_backup)
 
@@ -230,7 +230,7 @@ class StorageEngine:
                 raise StorageEngineError(
                     phase="USB_DETECTION",
                     message=f"Nessun disco rilevato sul bus USB per il VG '{self.config.vg_name}' entro {self.config.usb_wait_max_sec}s.",
-                    hint="Verificare il cavo USB del box MyBook e che il disco riceva alimentazione 220V.",
+                    hint="Verificare il cavo USB del disco/box esterno e che il disco riceva alimentazione 220V.",
                 )
             self.log(f"  [✓] Disco individuato sul bus: {target_dev}", log_cb)
 

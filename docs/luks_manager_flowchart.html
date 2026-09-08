@@ -675,7 +675,7 @@
       "title": "[3/7] Attivazione Volume Group LVM",
       "privilege": "root (LVM2 Engine)",
       "cmd": "vgscan --mknodes && vgchange -ay <vg_name>",
-      "desc": "Scansiona e attiva il volume group configurato (es. mybook), esponendo i nodi /dev/<vg>/<lv>.",
+      "desc": "Scansiona e attiva il volume group configurato (es. vg_storage), esponendo i nodi /dev/<vg>/<lv>.",
       "security": "In caso di fallimento o volumi mancanti, la procedura innesca il rollback di teardown."
     }
   },
@@ -733,8 +733,8 @@
       "badgeClass": "tag-start",
       "title": "[5/7] Montaggio Filesystem ext4",
       "privilege": "root (mount, chown, chmod)",
-      "cmd": "mount /dev/mapper/cryptovault /srv/storage/cryptovault",
-      "desc": "Monta il volume cifrato su /srv/storage/cryptovault e l'eventuale volume di backup su /srv/storage/backup_data con bit SGID 2775.",
+      "cmd": "mount /dev/mapper/secure_vault /srv/storage/secure_vault",
+      "desc": "Monta il volume cifrato su /srv/storage/secure_vault e l'eventuale volume di backup su /srv/storage/backup_vault con bit SGID 2775.",
       "security": "Verifica atomica dello stato montato per garantire disponibilità immediata del filesystem."
     }
   },
@@ -968,7 +968,7 @@
       "title": "[6/8] Disattivazione Volume Group LVM",
       "privilege": "root (LVM2 Engine)",
       "cmd": "vgchange -an <vg_name>",
-      "desc": "Disattiva il Volume Group mybook e tutti i volumi logici associati, chiudendo i descrittori di blocco aperti sul Physical Volume.",
+      "desc": "Disattiva il Volume Group vg_storage e tutti i volumi logici associati, chiudendo i descrittori di blocco aperti sul Physical Volume.",
       "security": "Rilascia il disco da qualsiasi hook attivo del sottosistema LVM."
     }
   },

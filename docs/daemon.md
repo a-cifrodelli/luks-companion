@@ -89,13 +89,13 @@ All requests and responses are standard JSON objects transmitted over the UNIX D
     "vg_active": true,
     "webdav_active": true,
     "webdav_port": "9088",
-    "vg_name": "vg_nas",
-    "mapper_name": "crypto_data",
-    "mount_crypto": "/srv/storage/crypto_data",
+    "vg_name": "vg_storage",
+    "mapper_name": "secure_vault",
+    "mount_crypto": "/srv/storage/secure_vault",
     "volumes": [
       {
-        "name": "Dati Cifrati (crypto_data)",
-        "mountpoint": "/srv/storage/crypto_data",
+        "name": "Volume Dati (secure_vault)",
+        "mountpoint": "/srv/storage/secure_vault",
         "total_bytes": 1968840245248,
         "used_bytes": 247839211520,
         "free_bytes": 1721001033728,
@@ -111,8 +111,8 @@ All requests and responses are standard JSON objects transmitted over the UNIX D
       "device": "/dev/sdb",
       "health": "PASSED",
       "temperature_c": 36,
-      "model": "WDC WD20EZAZ-00GGJB0",
-      "serial": "WD-WCC4N1EXAMPLE"
+      "model": "Generic External Disk (USB 3.0)",
+      "serial": "SN-DEMO-98765432"
     },
     "smartctl_installed": true
   }
@@ -153,9 +153,9 @@ All requests and responses are standard JSON objects transmitted over the UNIX D
     "unlocked": true,
     "mounted": true,
     "webdav_active": true,
-    "vg_name": "vg_nas",
-    "mapper_name": "crypto_data",
-    "mount_crypto": "/mnt/crypto_data"
+    "vg_name": "vg_storage",
+    "mapper_name": "secure_vault",
+    "mount_crypto": "/srv/storage/secure_vault"
   }
 }
 ```

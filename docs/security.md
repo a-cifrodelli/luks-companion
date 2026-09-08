@@ -45,17 +45,17 @@ chmod 600 vault.key
 
 ### 2. Adding the Keyfile to your LUKS Volume
 
-To install the keyfile onto your LVM logical volume (e.g. `/dev/vg_nas/lv_crypto`):
+To install the keyfile onto your LVM logical volume (e.g. `/dev/vg_storage/secure_vault`):
 
 ```bash
 # 1. Activate Volume Group (if not already active)
-sudo vgchange -ay vg_nas
+sudo vgchange -ay vg_storage
 
 # 2. Add the keyfile to an available keyslot (prompt will ask for existing passphrase to authorize)
-sudo cryptsetup luksAddKey /dev/vg_nas/lv_crypto vault.key
+sudo cryptsetup luksAddKey /dev/vg_storage/secure_vault vault.key
 
 # 3. Verify keyslots
-sudo cryptsetup luksDump /dev/vg_nas/lv_crypto
+sudo cryptsetup luksDump /dev/vg_storage/secure_vault
 ```
 
 > [!TIP]
@@ -139,10 +139,10 @@ tail -c 512 secret_wallpaper.jpg | sudo python3 -m luks_companion start
    If a keyfile or stego image is ever compromised:
    ```bash
    # Remove a keyfile from LUKS keyslot using your master passphrase
-   sudo cryptsetup luksRemoveKey /dev/vg_nas/lv_crypto vault.key
+   sudo cryptsetup luksRemoveKey /dev/vg_storage/secure_vault vault.key
    
    # Or kill specific keyslot (e.g., keyslot 1)
-   sudo cryptsetup luksKillSlot /dev/vg_nas/lv_crypto 1
+   sudo cryptsetup luksKillSlot /dev/vg_storage/secure_vault 1
    ```
 
 ---

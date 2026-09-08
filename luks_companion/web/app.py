@@ -48,9 +48,61 @@ def send_socket_command(sock_path: str, payload: dict, timeout: int = 45) -> dic
         return {"status": "error", "message": f"Errore comunicazione con demone: {e}"}
 
 
+MOCK_SERVER_DATA = {
+    "status": "mounted",
+    "unlocked": True,
+    "mounted": True,
+    "vg_active": True,
+    "plug_state": "on",
+    "plug_powered": True,
+    "disk_present": True,
+    "target_dev": "/dev/sdb",
+    "webdav_active": True,
+    "webdav_port": 9088,
+    "vg_name": "vg_storage",
+    "mapper_name": "secure_vault",
+    "mount_crypto": "/srv/storage/secure_vault",
+    "mount_backup": "/srv/storage/backup_vault",
+    "volumes": [
+        {
+            "name": "Volume Dati (secure_vault)",
+            "mountpoint": "/srv/storage/secure_vault",
+            "total_bytes": 1968840245248,
+            "used_bytes": 247839211520,
+            "free_bytes": 1721001033728,
+            "used_percent": 12.6,
+            "total_human": "1.8 TB",
+            "used_human": "230.8 GB",
+            "free_human": "1.6 TB",
+        },
+        {
+            "name": "Volume Backup (backup_vault)",
+            "mountpoint": "/srv/storage/backup_vault",
+            "total_bytes": 984420122624,
+            "used_bytes": 413456451502,
+            "free_bytes": 570963671122,
+            "used_percent": 42.0,
+            "total_human": "916.8 GB",
+            "used_human": "385.1 GB",
+            "free_human": "531.7 GB",
+        },
+    ],
+    "smart": {
+        "supported": True,
+        "installed": True,
+        "device": "/dev/sdb",
+        "health": "PASSED",
+        "temperature_c": 36,
+        "model": "Generic External Disk (USB 3.0)",
+        "serial": "SN-DEMO-98765432",
+    },
+}
+
+
 class WebGatewayHandler(BaseHTTPRequestHandler):
     config: Config
     static_dir: str
+    is_mock: bool = False
 
     def log_message(self, format, *args):
         # Quiet standard HTTP access logs
@@ -80,6 +132,9 @@ class WebGatewayHandler(BaseHTTPRequestHandler):
         path = parsed.path
 
         if path == "/api/status":
+            if self.is_mock or "mock=1" in parsed.query:
+                self.send_json({"status": "ok", "data": MOCK_SERVER_DATA})
+                return
             res = send_socket_command(self.config.socket_path, {"action": "status"})
             self.send_json(res)
 
@@ -161,6 +216,12 @@ class WebGatewayHandler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
             self.serve_static(path)
+
+        elif path in ("/demo", "/mock"):
+            self.send_response(302)
+            self.send_header("Location", "/?mock=1")
+            self.end_headers()
+            return
 
         else:
             self.serve_static(path)
@@ -264,6 +325,9 @@ class WebGatewayHandler(BaseHTTPRequestHandler):
             with open(file_path, "rb") as f:
                 content = f.read()
 
+            if (path in ("/", "/index.html")) and getattr(self, "is_mock", False):
+                content = content.replace(b"</head>", b"<script>window.IS_MOCK_SERVER = true;</script></head>")
+
             self.send_response(200)
             self.send_header("Content-Type", mime_type)
             self.send_header("Content-Length", str(len(content)))
@@ -280,7 +344,10 @@ class WebGatewayHandler(BaseHTTPRequestHandler):
                 pass
 
 
-def run_web_server(config: Optional[Config] = None, drop_privs_user: Optional[str] = None) -> None:
+def run_web_server(config: Optional[Config] = None, drop_privs_user: Optional[str] = None, mock: bool = False) -> None:
+    if "--mock" in sys.argv or "--demo" in sys.argv:
+        mock = True
+
     cfg = config or Config.from_env_file()
 
     # Drop privileges if requested and running as root
@@ -299,10 +366,13 @@ def run_web_server(config: Optional[Config] = None, drop_privs_user: Optional[st
 
     WebGatewayHandler.config = cfg
     WebGatewayHandler.static_dir = static_dir
+    WebGatewayHandler.is_mock = mock
 
     server = ThreadingHTTPServer((cfg.web_host, cfg.web_port), WebGatewayHandler)
     server.daemon_threads = True
     print(f"[*] LUKS-Companion Web Gateway multithreading attivo su http://{cfg.web_host}:{cfg.web_port}")
+    if mock:
+        print("[*] 🌟 MODALITÀ DEMO / MOCK ATTIVA (per screenshot e documentazione)")
     print(f"[*] Serving static assets da: {static_dir}")
     try:
         server.serve_forever()
