@@ -125,6 +125,43 @@ class WebGatewayHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
 
+        elif path in ("/flowchart", "/flowchart.html"):
+            flowchart_path = os.path.join(self.config.base_dir, "docs", "luks_manager_flowchart.html")
+            if os.path.exists(flowchart_path):
+                try:
+                    with open(flowchart_path, "rb") as f:
+                        content = f.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(content)))
+                    self.send_header("Cache-Control", "no-cache")
+                    self.end_headers()
+                    self.wfile.write(content)
+                    return
+                except Exception as e:
+                    self.send_json({"status": "error", "message": f"Errore lettura flowchart: {e}"}, 500)
+                    return
+            else:
+                self.send_json({"status": "error", "message": "File flowchart non trovato"}, 404)
+                return
+
+        elif path == "/vis-network.min.js":
+            vis_path = os.path.join(self.config.base_dir, "docs", "vis-network.min.js")
+            if os.path.exists(vis_path):
+                try:
+                    with open(vis_path, "rb") as f:
+                        content = f.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/javascript; charset=utf-8")
+                    self.send_header("Content-Length", str(len(content)))
+                    self.send_header("Cache-Control", "public, max-age=86400")
+                    self.end_headers()
+                    self.wfile.write(content)
+                    return
+                except Exception:
+                    pass
+            self.serve_static(path)
+
         else:
             self.serve_static(path)
 

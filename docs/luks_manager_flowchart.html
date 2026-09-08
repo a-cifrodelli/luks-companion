@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LUKS Companion - Architettura & Flussi Operativi</title>
-  <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <script type="text/javascript" src="vis-network.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -1392,10 +1392,41 @@
       }
     }
 
-    // Inizializzazione sicura al caricamento
-    function init() {
-      if (typeof vis === 'undefined' || !vis.Network) {
-        document.getElementById('network').innerHTML = '<div style="display:flex; height:100%; align-items:center; justify-content:center; flex-direction:column; gap:1rem; color:#ef4444; font-size:1.1rem; text-align:center;"><div>⚠️ Impossibile caricare la libreria vis-network da CDN (unpkg.com).</div><div style="font-size:0.9rem; color:#94a3b8;">Verificare la connessione Internet o disattivare estensioni ad-block per questa pagina.</div></div>';
+    function loadScript(url) {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.type = 'text/javascript';
+        script.src = url;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error('Failed to load ' + url));
+        document.head.appendChild(script);
+      });
+    }
+
+    async function ensureVisLoaded() {
+      if (typeof vis !== 'undefined' && vis.Network) return true;
+      const cdnList = [
+        'vis-network.min.js',
+        'https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.9/dist/vis-network.min.js',
+        'https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js',
+        'https://unpkg.com/vis-network/standalone/umd/vis-network.min.js'
+      ];
+      for (const src of cdnList) {
+        try {
+          await loadScript(src);
+          if (typeof vis !== 'undefined' && vis.Network) return true;
+        } catch (e) {
+          console.warn('vis-network source failed, trying next:', src);
+        }
+      }
+      return false;
+    }
+
+    // Inizializzazione sicura al caricamento con failover CDN
+    async function init() {
+      const ok = await ensureVisLoaded();
+      if (!ok || typeof vis === 'undefined' || !vis.Network) {
+        document.getElementById('network').innerHTML = '<div style="display:flex; height:100%; align-items:center; justify-content:center; flex-direction:column; gap:1rem; color:#ef4444; font-size:1.1rem; text-align:center; padding:2rem;"><div>⚠️ Impossibile caricare la libreria vis-network (locale, Cloudflare, jsDelivr o unpkg).</div><div style="font-size:0.9rem; color:#94a3b8; max-width:600px;">Verificare la connessione Internet o verificare che le estensioni ad-block del browser consentano il caricamento degli script per questa anteprima.</div></div>';
         return;
       }
       createNetwork(allNodesData, allEdgesData);

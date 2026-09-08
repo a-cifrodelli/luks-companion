@@ -128,3 +128,40 @@ def test_web_gateway_header_backup_download():
         assert headers_dict.get("Content-Type") == "application/octet-stream"
         assert "backup.header" in headers_dict.get("Content-Disposition", "")
         assert handler.wfile.getvalue() == raw_header_bytes
+
+
+def test_web_gateway_flowchart_route(tmp_path):
+    cfg = Config()
+    cfg.base_dir = str(tmp_path)
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    flowchart_file = docs_dir / "luks_manager_flowchart.html"
+    flowchart_file.write_text("<html>Flowchart Test</html>", encoding="utf-8")
+
+    handler = WebGatewayHandler.__new__(WebGatewayHandler)
+    handler.config = cfg
+    handler.path = "/flowchart"
+    handler.wfile = io.BytesIO()
+    handler.headers_sent = []
+    handler.response_code = None
+
+    def fake_send_response(code):
+        handler.response_code = code
+
+    def fake_send_header(key, val):
+        handler.headers_sent.append((key, val))
+
+    def fake_end_headers():
+        pass
+
+    handler.send_response = fake_send_response
+    handler.send_header = fake_send_header
+    handler.end_headers = fake_end_headers
+
+    handler.do_GET()
+
+    assert handler.response_code == 200
+    headers_dict = dict(handler.headers_sent)
+    assert "text/html" in headers_dict.get("Content-Type", "")
+    assert b"Flowchart Test" in handler.wfile.getvalue()
+
