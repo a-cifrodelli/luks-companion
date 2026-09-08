@@ -12,6 +12,8 @@ An on-demand, zero-standby-power LUKS2 & LVM storage subsystem orchestrator desi
 
 It combines **Home Assistant REST API smart plug control**, **LVM Volume Group activation**, **RAM-only LUKS2 passphrase & keyfile decryption (`stdin`)**, **lightweight WebDAV sharing**, and **clean SCSI spindown (`udisksctl power-off`)** to achieve true **0 Watt cold storage standby** with safe physical head parking.
 
+![LUKS Companion Web Dashboard - Sbloccato e Operativo](docs/media/opened.png)
+
 > [!NOTE]
 > ### 🎯 Destinatari e Prerequisiti di Competenza
 > Questo progetto **non è una suite consumer "plug-and-play"** per utenti alle prime armi, ma uno strumento di orchestrazione avanzato pensato per sistemisti, power user e amministratori Linux con già familiarità con:

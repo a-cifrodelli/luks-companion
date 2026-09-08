@@ -38,6 +38,25 @@ flowchart LR
 
 ---
 
+## 📸 Desktop Web Dashboard Interface
+
+### 🟢 Stato Sbloccato & Operativo
+Quando il sistema è operativo, la dashboard visualizza lo stato dei Volume Group LVM, il device mapper decifrato in RAM, i mount point ext4, lo stato del servizio WebDAV, la telemetria S.M.A.R.T. (`PASSED`, temperatura a `36°C`), le barre di capienza per ciascun volume e il log in streaming delle operazioni:
+
+![LUKS Companion Dashboard - Sbloccato e Operativo](media/opened.png)
+
+### ⚪ Stato Standby 0 Watt (Storage Sigillato & Spento)
+In modalità inattiva o a seguito dell'arresto, il container crittografico è sigillato (0 byte di chiavi in RAM), il Volume Group LVM è disattivato, le testine del disco sono parcheggiate in sicurezza e l'alimentazione 220V della presa smart è interrotta (0 Watt):
+
+![LUKS Companion Dashboard - Standby 0W](media/closed.png)
+
+### 🛑 Arresto Sicuro & Conferma Cutoff 220V
+Per prevenire arresti accidentali durante trasferimenti file o sessioni WebDAV attive, la dashboard richiede una conferma esplicita prima di innescare la sequenza di teardown a 8 fasi:
+
+![Conferma Arresto di Sicurezza](media/power-off.png)
+
+---
+
 ## 🚀 Installation & Setup
 
 ### Automated Installation
@@ -111,8 +130,17 @@ storage.your-domain.lan {
 
 ## 🔑 Dashboard Features & Unlock Modes
 
-1. **🔒 Passphrase**: Standard password prompt for manual unlocking.
-2. **📄 Keyfile (.key)**: Direct drag & drop of a 512-byte binary keyfile.
-3. **🖼️ Foto Stenografica**: Drag & drop any steganographic photo with an optional secondary password. The browser extracts the key in RAM using PBKDF2/HMAC and submits only the decrypted key bytes.
-4. **🎨 Stego Key Studio**: Built-in visual tool in the top header to generate 4096-bit CSPRNG keys, embed them into any photo, and download both `vault.key` and `stego_image.jpg` completely client-side.
-5. **💾 Header Backup Download**: Built-in button in the top navigation bar to download a timestamped cryptographic header backup (`/api/backup-header`) for offline disaster recovery.
+1. **🔒 Passphrase**: Prompt per inserimento manuale protetto della passphrase LUKS.
+2. **📄 Keyfile (.key)**: Drag & drop diretto di file binari ad alta entropia (512 byte).
+3. **🖼️ Foto Stenografica**: Drag & drop di qualsiasi foto contenente chiavi cifrate con estrazione in RAM (Web Crypto API).
+4. **🎨 Stego Key Studio**: Generatore integrato di chiavi CSPRNG 4096-bit con embedding visuale ed esportazione client-side senza comunicare col server:
+
+![Stego Key Studio](media/stego.png)
+
+5. **💾 Backup Header LUKS2**: Generazione e download con un click di un dump atomico dell'header crittografico:
+
+![Gestione e Backup Header LUKS](media/generate-header.png)
+
+6. **⚠️ Disaster Recovery (Ripristino Header)**: Modale di soccorso per ripristinare un header su storage corrotto con salvaguardia dei blocchi:
+
+![Disaster Recovery Ripristino Header](media/recover-header.png)

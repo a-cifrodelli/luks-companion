@@ -126,6 +126,13 @@ tail -c 512 secret_wallpaper.jpg | sudo python3 -m luks_companion start
 
 ---
 
+### 4. Client-Side Web Tool: Stego Key Studio (Web Crypto API)
+La Web Dashboard integra un generatore visivo client-side che genera chiavi casuali a 4096-bit (CSPRNG), le fonde con l'immagine fornita dall'utente e applica opzionalmente cifratura PBKDF2-HMAC-SHA256, tutto interamente nella memoria RAM del browser senza mai transitare verso il server:
+
+![Stego Key Studio](media/stego.png)
+
+---
+
 ## 🔒 WebApp & Socket RAM Hygiene
 
 1. **Ephemeral Key Handling**:
@@ -153,15 +160,26 @@ The LUKS2 header contains the primary cryptographic metadata, keyslots, and Argo
 
 ### 1. Creating an Offline Header Backup
 ```bash
-# Genera un dump atomico dell'header LUKS2
+# Genera un dump atomico dell'header LUKS2 via CLI
 sudo python3 -m luks_companion backup-header --out /root/luks_header_cold_backup.bin
 chmod 400 /root/luks_header_cold_backup.bin
 ```
+
+#### Via Web Dashboard:
+È possibile scaricare il backup istantaneo dell'header (`.header`, ~16 MB) direttamente dalla GUI con un click:
+
+![Backup Header LUKS](media/generate-header.png)
+
 > [!CAUTION]
-> **Sicurezza del Backup**: Il file `.bin` dell'header contiene gli slot cifrati con Argon2id. Conservalo sempre offline su un supporto fisico separato (es. chiavetta USB cifrata in cassaforte).
+> **Sicurezza del Backup**: Il file `.bin` o `.header` contiene gli slot crittografici protetti da Argon2id. Conservalo sempre offline su un supporto fisico separato (es. pendrive cifrata in cassaforte).
 
 ### 2. Restoring a Corrupted Header
 ```bash
-# Ripristina l'header (richiede conferma esplicita e container chiuso)
+# Ripristina l'header da CLI (richiede conferma esplicita e container chiuso)
 sudo python3 -m luks_companion restore-header /root/luks_header_cold_backup.bin
 ```
+
+#### Via Web Dashboard (Disaster Recovery):
+Se il disco non si apre a causa di corruzione dell'header, è possibile trascinare il file di backup nella scheda di emergenza della dashboard per ripristinarlo con conferma di sicurezza:
+
+![Ripristino Header di Emergenza](media/recover-header.png)
