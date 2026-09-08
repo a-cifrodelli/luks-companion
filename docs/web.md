@@ -25,7 +25,8 @@ flowchart LR
 > [!TIP]
 > ### 🗺️ Lifecycle Flowchart
 > To visually explore the complete orchestrator workflow (from 220V power-on to safe SCSI un-enumeration):
-> 👉 <a href="luks_manager_flowchart.html" target="_blank">**Open Interactive Flowchart in Browser (`docs/luks_manager_flowchart.html`)**</a>
+> * 🌐 **Live Web Preview**: <a href="https://htmlpreview.github.io/?https://github.com/a-cifrodelli/luks-companion/blob/main/docs/luks_manager_flowchart.html" target="_blank">**Open Flowchart on htmlpreview.github.io**</a>
+> * 💻 **Local / Dashboard**: Accessible via `/flowchart` on the Web Gateway or by opening <a href="luks_manager_flowchart.html" target="_blank">`docs/luks_manager_flowchart.html`</a>.
 
 ### Architecture & Security Features:
 - **Multi-Threaded Concurrency (`ThreadingWebGatewayServer`)**: Employs daemon worker threads to process incoming HTTP requests and streaming operations concurrently. Page refreshes (`F5`), background status polling, and multi-tab access never stall or raise broken pipe errors.

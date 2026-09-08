@@ -102,7 +102,8 @@ flowchart TD
 > [!TIP]
 > ### 🗺️ Mappa Interattiva del Ciclo di Vita (v2.0)
 > Per esplorare visivamente la macchina a stati completa (gestione fallimenti alimentazione, rilevamento USB, decifratura in RAM, S.M.A.R.T. a 0W, unmount atomico e dis-enumerazione kernel) con zoom, ricerca e cassetto dettagli:
-> 👉 <a href="docs/luks_manager_flowchart.html" target="_blank">**Apri il Flowchart Interattivo nel Browser (`docs/luks_manager_flowchart.html`)**</a>
+> * 🌐 **Live Preview Web**: 👉 <a href="https://htmlpreview.github.io/?https://github.com/a-cifrodelli/luks-companion/blob/main/docs/luks_manager_flowchart.html" target="_blank">**Apri il Flowchart Interattivo su htmlpreview.github.io**</a>
+> * 💻 **In locale / Clone**: Apri il file <a href="docs/luks_manager_flowchart.html" target="_blank">`docs/luks_manager_flowchart.html`</a> direttamente nel browser (o dalla Web Dashboard tramite il pulsante *🗺️ Architettura*).
 
 > [!IMPORTANT]
 > **Active Safety Verification**: Before sending the 220V power cutoff command to Home Assistant, `luks-manager` actively queries the Linux kernel `/sys/block/` tree and device node table until kernel un-enumeration is 100% confirmed. This guarantees that SCSI head parking and USB bus ejection are complete before turning off the outlet.
@@ -151,7 +152,7 @@ sudo apt update && sudo apt install -y cryptsetup lvm2 udisks2 psmisc curl socat
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-username/luks-companion.git
+   git clone https://github.com/a-cifrodelli/luks-companion.git
    cd luks-companion
    ```
 
